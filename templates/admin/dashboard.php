@@ -26,6 +26,22 @@ use function OpenSendForm\Admin\icon;
     </div>
 <?php endif; ?>
 
+<?php if (($monitorFailures ?? []) !== []): ?>
+    <?php /* Not dismissible: a failing synthetic check means visitors may be
+             unable to submit (or their submissions are not reaching the owner).
+             It clears itself as soon as a later check passes. */ ?>
+    <div class="osf-flash osf-flash--error" role="alert">
+        <?= icon('alert-triangle') ?>
+        <span><strong>Synthetic monitoring detected a problem</strong> &mdash;
+        <?php
+        $names = array_map(static fn (array $f): string => h((string) $f['form_name']), $monitorFailures);
+        ?>
+        the latest check failed for
+        <?= count($names) === 1 ? 'form' : 'forms' ?> <?= implode(', ', $names) ?>.
+        See <code>bin/osf monitor:status</code> for detail.</span>
+    </div>
+<?php endif; ?>
+
 <?php if (($showNudge ?? false) === true): ?>
     <?php /* Dismissible-per-session nudge urging 2FA enrolment. Dismissing
              sets a session flag (see AdminController::dismissNudge); it

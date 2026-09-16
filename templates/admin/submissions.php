@@ -53,6 +53,9 @@ $returnQuery = $returnParams === [] ? '' : '?' . http_build_query($returnParams)
                     <?php foreach ($statuses as $s): ?>
                         <option value="<?= h($s) ?>" <?= $status === $s ? 'selected' : '' ?>><?= h($s) ?></option>
                     <?php endforeach; ?>
+                    <?php /* Synthetic monitor probes are hidden from every other
+                             view; this option is the only way to see them. */ ?>
+                    <option value="synthetic" <?= ($syntheticView ?? false) ? 'selected' : '' ?>>synthetic (monitor)</option>
                 </select>
             </div>
             <div class="osf-field">

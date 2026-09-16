@@ -1945,3 +1945,77 @@ all-active form set.
   (518 tests, 3354 assertions).
 - Out of scope (untouched): admin account deletion, retention-purge,
   soft-delete/undo, audit logging, the embed, the pipeline, tokens.css.
+
+## 2026-09-09 — Increment 9: synthetic monitoring + alerting
+- Branch: feature/synthetic-monitoring (off main).
+- Goal: the operator must learn of breakage before clients do. Scheduled
+  fake-but-real submissions exercise the FULL public pipeline end to end
+  (token fetch → min-time wait → POST → store → SMTP delivery to the form's
+  real recipient), plus state-transition alerting.
+- Migration 010 (`010_synthetic_monitoring.sql`, portable): adds
+  `submissions.is_synthetic` (INTEGER NOT NULL DEFAULT 0) and the
+  `monitor_checks` table (id, form_id, checked_at, ok, detail) + an index.
+  Updated the three tests that pin the applied-versions list (now [1..10]) and
+  the dashboard stale-schema fixture (now migrates to v9 so exactly one — 010 —
+  is pending).
+- Pipeline marking: new reserved field `_osf_monitor` (SubmitContext constant +
+  `monitorSecret` property; FieldHygieneStage populates it, still stripped from
+  stored content). `StoreStage` gains a `$monitorSecret` ctor arg and marks the
+  stored row synthetic ONLY when a non-empty configured `MONITOR_SECRET` matches
+  the marker in constant time (`hash_equals`). Marking happens AT the store, so
+  a filled honeypot / bad token still discards even with the right secret — the
+  reserved field never bypasses a stage. `SubmitPipeline::create` passes
+  `$config->monitorSecret()`; the 11-stage order is unchanged (order test green).
+- SubmissionRepository: `recordSubmission` gains `bool $isSynthetic`;
+  dashboard stats (`countSince`, `countByStatus`, `recentByStatuses`) and the
+  default list (`listPage`/`countFiltered` via `filter()`) now exclude
+  `is_synthetic = 1`; a `$syntheticOnly` flag inverts the list filter for the
+  admin "synthetic" view. New `purgeSyntheticOlderThan`, `newestSyntheticForForm`,
+  `maxSyntheticId`.
+- Config: seven `MONITOR_*` defaults + typed accessors (secret, retention days,
+  canary form id, form interval hours, send-timeout seconds, alert email, base
+  URL; base URL defaults to http://localhost:8080 for dev).
+- Monitor module (`src/Monitor/`): `HttpClient` interface + `CurlHttpClient`
+  (curl, no new dep) + `HttpResponse`/`HttpTransportException`; `Sleeper` +
+  `RealSleeper` (min-time wait & delivery poll seam); `MonitorRepository`
+  (record/latest/last-result/failing-forms — the ONLY monitor state);
+  `MonitorSchedule` (pure due/stagger planner — canary every run, others ≤ once
+  per interval, never-checked introduced one per run); `MonitorService` (secret
+  ensure+write-back, purge, schedule, per-form check token→min-time→POST→poll,
+  ok↔fail alert/recovery transitions, run/status).
+- Alerting: one email on each ok→fail (or first-ever fail) and fail→ok
+  transition via the existing MailerInterface, to `MONITOR_ALERT_EMAIL` or the
+  first admin; no repeat while a form stays failed (state from monitor_checks).
+  If a needed alert can't send, `run()` reports it and `monitor:run` exits
+  nonzero (cron backstop) — otherwise it always exits 0 when checks ran.
+- Dashboard: red banner (stale-schema pattern) naming the form(s) whose LATEST
+  check failed, cleared by a later passing check; the monitor query is skipped
+  while migrations are pending (its table may not exist yet on a stale schema),
+  and — new — the dashboard now defaults its submission stats to zero when the
+  schema is behind so it always renders the migrate banner.
+- Submissions screen: a "synthetic (monitor)" filter option lists probes only;
+  "Delete all" is disabled in that view (probes auto-purge). Filter is preserved
+  across retry/delete redirects.
+- CLI: `bin/osf monitor:run` (single cron entry point) and `monitor:status`
+  wired with a `buildMonitorService` assembler; usage text updated with a
+  suggested hourly cPanel cron line beside the mail:retry guidance. README gains
+  a "Synthetic monitoring" section.
+- Tests (+30, 548 total / 3462 assertions, all green): marking (right secret
+  marks, wrong/absent/empty-config doesn't, honeypot still discards) via the
+  real app; stats/list exclusion + purge + helpers (repository); pure
+  due/stagger planner; end-to-end MonitorService against an in-process app
+  (`InProcessHttpClient`) with `FakeMailer`/`FixedClock`/`FakeSleeper` — pass
+  path delivers to the real recipient with the marker, failing delivery alerts
+  once, no-repeat-then-recovery, alert-send-failure reported, unreachable
+  endpoint = failed check that alerts, purge, secret write-back, status; dashboard
+  banner (present/absent/cleared); synthetic filter view (HTTP); CLI monitor:run
+  /monitor:status/usage (shelled out, no live server). Network + sleep bound
+  behind interfaces so the suite needs no server and never sleeps.
+- Deviations / decisions logged to QUESTIONS.md: (1) unreachable-endpoint
+  transport errors are treated as failed checks (alert), nonzero exit reserved
+  for "cannot alert"; (2) synthetics share the server IP against the per-IP
+  rate limit — staggering keeps normal runs safe, documented not special-cased;
+  (3) the delivered probe's marker is in the body (subject derives from the form
+  name), while the alert emails carry it in the subject.
+- Out of scope (untouched): webhooks/external ping services, admin UI for
+  monitor config, embed/tokens.css, the frozen JSON contract, the stage order.

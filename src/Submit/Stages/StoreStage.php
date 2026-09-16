@@ -22,14 +22,24 @@ use OpenSendForm\Submit\SubmitOutcome;
  *
  * This stage does not terminate the pipeline: it returns null so the always
  * present delivery stage runs next and produces the success outcome.
+ *
+ * Synthetic marking happens HERE, at the store, and nowhere earlier: a request
+ * that carried the reserved _osf_monitor field with a value matching the
+ * configured MONITOR_SECRET has its stored row flagged is_synthetic. The secret
+ * is compared in constant time; an empty configured secret never matches, so a
+ * forged or absent marker is always an ordinary submission. Crucially the flag
+ * is decided only once every abuse/validation stage before this one has passed
+ * — the reserved field can never let a submission skip a stage.
  */
 final class StoreStage implements Stage
 {
     private SubmissionRepository $submissions;
+    private string $monitorSecret;
 
-    public function __construct(SubmissionRepository $submissions)
+    public function __construct(SubmissionRepository $submissions, string $monitorSecret = '')
     {
         $this->submissions = $submissions;
+        $this->monitorSecret = $monitorSecret;
     }
 
     public function process(SubmitContext $context): ?SubmitOutcome
@@ -43,9 +53,23 @@ final class StoreStage implements Stage
             $context->matchedOrigin,
             $context->userAgent,
             $contentJson,
-            'received'
+            'received',
+            $this->isSynthetic($context)
         );
 
         return null;
+    }
+
+    /**
+     * True only when a non-empty MONITOR_SECRET is configured AND the request's
+     * reserved marker matches it exactly (constant-time compare).
+     */
+    private function isSynthetic(SubmitContext $context): bool
+    {
+        if ($this->monitorSecret === '' || $context->monitorSecret === null) {
+            return false;
+        }
+
+        return hash_equals($this->monitorSecret, $context->monitorSecret);
     }
 }

@@ -70,7 +70,7 @@ final class SubmitPipeline
             new TokenStage($tokens),             // g. submit-token
             new TurnstileStage($turnstile),      // g'. optional per-form Turnstile
             new EmailValidationStage($dns),      // h. email syntax + MX/A
-            new StoreStage($submissions),        // i. persist (non-terminal)
+            new StoreStage($submissions, $config->monitorSecret()), // i. persist (non-terminal)
             new DeliveryStage($delivery, $config), // j. mail relay -> success
         ]);
     }

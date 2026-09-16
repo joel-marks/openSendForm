@@ -38,10 +38,11 @@ final class DashboardStaleSchemaTest extends TestCase
         self::assertStringNotContainsString('Database update required', $body);
     }
 
-    public function testBannerPresentWithAVersion8FixtureDatabase(): void
+    public function testBannerPresentWithAStaleFixtureDatabase(): void
     {
+        // One migration behind (010 shipped in code, not yet applied here).
         $db = Database::connect('sqlite::memory:');
-        $this->migrateUpToVersion($db, 8);
+        $this->migrateUpToVersion($db, 9);
 
         $body = (string) $this->dashboard($db)->getBody();
 

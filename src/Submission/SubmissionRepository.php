@@ -43,25 +43,75 @@ final class SubmissionRepository
         ?string $origin,
         ?string $userAgent,
         ?string $contentJson = null,
-        string $status = 'received'
+        string $status = 'received',
+        bool $isSynthetic = false
     ): int {
         $this->db->execute(
             'INSERT INTO submissions
-                (form_id, created_at, remote_ip, origin, user_agent, status, content)
+                (form_id, created_at, remote_ip, origin, user_agent, status, content, is_synthetic)
              VALUES
-                (:form_id, :created_at, :remote_ip, :origin, :user_agent, :status, :content)',
+                (:form_id, :created_at, :remote_ip, :origin, :user_agent, :status, :content, :is_synthetic)',
             [
-                'form_id'    => $formId,
-                'created_at' => self::now(),
-                'remote_ip'  => $remoteIp,
-                'origin'     => $origin,
-                'user_agent' => $userAgent,
-                'status'     => $status,
-                'content'    => $contentJson,
+                'form_id'      => $formId,
+                'created_at'   => self::now(),
+                'remote_ip'    => $remoteIp,
+                'origin'       => $origin,
+                'user_agent'   => $userAgent,
+                'status'       => $status,
+                'content'      => $contentJson,
+                'is_synthetic' => $isSynthetic ? 1 : 0,
             ]
         );
 
         return (int) $this->db->pdo()->lastInsertId();
+    }
+
+    /**
+     * Delete synthetic submissions created before a portable 'Y-m-d H:i:s' UTC
+     * cutoff. Called by the monitor to auto-purge its own probes after a short
+     * retention. Only ever touches is_synthetic = 1 rows, so real submissions
+     * are never affected regardless of the cutoff.
+     *
+     * @return int Rows deleted.
+     */
+    public function purgeSyntheticOlderThan(string $cutoff): int
+    {
+        return $this->db->execute(
+            'DELETE FROM submissions WHERE is_synthetic = 1 AND created_at < :cutoff',
+            ['cutoff' => $cutoff]
+        )->rowCount();
+    }
+
+    /**
+     * The newest synthetic submission for a form with an id greater than
+     * $afterId, or null. The monitor captures the pre-check high-water id, then
+     * uses this to find the exact row its POST created so it can poll delivery.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function newestSyntheticForForm(int $formId, int $afterId): ?array
+    {
+        return $this->db->fetchOne(
+            'SELECT * FROM submissions
+              WHERE form_id = :form_id AND is_synthetic = 1 AND id > :after_id
+              ORDER BY id DESC
+              LIMIT 1',
+            ['form_id' => $formId, 'after_id' => $afterId]
+        );
+    }
+
+    /**
+     * The highest synthetic submission id for a form (0 when none). Used as the
+     * pre-check high-water mark so a subsequent probe row can be told apart.
+     */
+    public function maxSyntheticId(int $formId): int
+    {
+        $row = $this->db->fetchOne(
+            'SELECT MAX(id) AS m FROM submissions WHERE form_id = :form_id AND is_synthetic = 1',
+            ['form_id' => $formId]
+        );
+
+        return (int) ($row['m'] ?? 0);
     }
 
     /**
@@ -311,7 +361,7 @@ final class SubmissionRepository
     public function countSince(string $cutoff): int
     {
         $row = $this->db->fetchOne(
-            'SELECT COUNT(*) AS c FROM submissions WHERE created_at >= :cutoff',
+            'SELECT COUNT(*) AS c FROM submissions WHERE created_at >= :cutoff AND is_synthetic = 0',
             ['cutoff' => $cutoff]
         );
 
@@ -319,12 +369,13 @@ final class SubmissionRepository
     }
 
     /**
-     * Count submissions in a given status.
+     * Count submissions in a given status. Synthetic monitor probes are
+     * excluded so the dashboard figures reflect only real traffic.
      */
     public function countByStatus(string $status): int
     {
         $row = $this->db->fetchOne(
-            'SELECT COUNT(*) AS c FROM submissions WHERE status = :status',
+            'SELECT COUNT(*) AS c FROM submissions WHERE status = :status AND is_synthetic = 0',
             ['status' => $status]
         );
 
@@ -352,6 +403,7 @@ final class SubmissionRepository
                   FROM submissions s
                   LEFT JOIN forms f ON f.id = s.form_id
                  WHERE s.status IN (' . $placeholders . ')
+                   AND s.is_synthetic = 0
                  ORDER BY s.id DESC
                  LIMIT ' . max(1, $limit);
 
@@ -365,9 +417,9 @@ final class SubmissionRepository
      *
      * @return array<int, array<string, mixed>>
      */
-    public function listPage(?string $status, ?int $formId, int $limit, int $offset): array
+    public function listPage(?string $status, ?int $formId, int $limit, int $offset, bool $syntheticOnly = false): array
     {
-        [$where, $params] = self::filter($status, $formId);
+        [$where, $params] = self::filter($status, $formId, $syntheticOnly);
 
         $sql = 'SELECT s.id, s.form_id, f.form_key, f.name AS form_name,
                        s.created_at, s.status, s.attempts, s.last_error
@@ -385,9 +437,9 @@ final class SubmissionRepository
      * Total submissions matching the same optional status/form filter, for
      * pagination.
      */
-    public function countFiltered(?string $status, ?int $formId): int
+    public function countFiltered(?string $status, ?int $formId, bool $syntheticOnly = false): int
     {
-        [$where, $params] = self::filter($status, $formId);
+        [$where, $params] = self::filter($status, $formId, $syntheticOnly);
 
         $row = $this->db->fetchOne('SELECT COUNT(*) AS c FROM submissions s' . $where, $params);
 
@@ -398,11 +450,15 @@ final class SubmissionRepository
      * Build a WHERE fragment (leading space, or empty) and its bound params
      * for the optional status/form filter shared by listPage/countFiltered.
      *
+     * Synthetic monitor probes are hidden by default (is_synthetic = 0); pass
+     * $syntheticOnly to invert that and show ONLY probes (is_synthetic = 1),
+     * which is how the admin "synthetic" filter view exposes them.
+     *
      * @return array{0: string, 1: array<string, mixed>}
      */
-    private static function filter(?string $status, ?int $formId): array
+    private static function filter(?string $status, ?int $formId, bool $syntheticOnly = false): array
     {
-        $conditions = [];
+        $conditions = [$syntheticOnly ? 's.is_synthetic = 1' : 's.is_synthetic = 0'];
         $params = [];
 
         if ($status !== null && $status !== '') {
@@ -414,7 +470,7 @@ final class SubmissionRepository
             $params['form_id'] = $formId;
         }
 
-        $where = $conditions === [] ? '' : ' WHERE ' . implode(' AND ', $conditions);
+        $where = ' WHERE ' . implode(' AND ', $conditions);
 
         return [$where, $params];
     }

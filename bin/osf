@@ -12,9 +12,14 @@ use OpenSendForm\Form\FormRepository;
 use OpenSendForm\Install\Paths;
 use OpenSendForm\Mail\DeliverabilityChecker;
 use OpenSendForm\Mail\DeliveryService;
+use OpenSendForm\Install\ConfigWriter;
 use OpenSendForm\Mail\MessageBuilder;
 use OpenSendForm\Mail\PhpMailerMailer;
 use OpenSendForm\Mail\SystemDnsResolver;
+use OpenSendForm\Monitor\CurlHttpClient;
+use OpenSendForm\Monitor\MonitorRepository;
+use OpenSendForm\Monitor\MonitorService;
+use OpenSendForm\Monitor\RealSleeper;
 use OpenSendForm\Storage\Database;
 use OpenSendForm\Storage\MigrationRunner;
 use OpenSendForm\Submission\SubmissionRepository;
@@ -92,6 +97,10 @@ try {
             exit(cmdSubmissionsList($db, $args));
         case 'submissions:purge':
             exit(cmdSubmissionsPurge($db, $args));
+        case 'monitor:run':
+            exit(cmdMonitorRun($db, $config, $paths));
+        case 'monitor:status':
+            exit(cmdMonitorStatus($db, $config, $paths));
         default:
             fwrite(STDERR, "Unknown command: {$command}\n\n" . usage());
             exit(1);
@@ -762,6 +771,109 @@ function cmdInstallStatus(): int
 }
 
 /**
+ * monitor:run — the single cron entry point for synthetic monitoring.
+ *
+ * Each run purges expired synthetic submissions, checks the canary form plus
+ * any other active form now due (staggered), records every result and sends one
+ * alert email on each ok<->fail transition. It ALWAYS exits 0 when checks ran —
+ * a failing check is reported and alerted, not treated as a monitor error — and
+ * exits nonzero only when the monitor itself cannot operate: here, when an alert
+ * email it needed to send could not be sent (cron output is then the backstop).
+ *
+ * Recommended cPanel cron (hourly):
+ *   0 * * * * /usr/local/bin/php /home/USER/opensendform/bin/osf monitor:run
+ */
+function cmdMonitorRun(Database $db, Config $config, Paths $paths): int
+{
+    $monitor = buildMonitorService($db, $config, $paths);
+    $summary = $monitor->run();
+
+    if ($summary['secret_generated']) {
+        fwrite(STDOUT, "Generated MONITOR_SECRET and wrote it to the config file.\n");
+    }
+
+    fwrite(STDOUT, sprintf(
+        "monitor:run — checked %d form(s): %d ok, %d failed; purged %d synthetic; %d alert(s) sent.\n",
+        $summary['checks_ran'],
+        $summary['checks_ran'] - $summary['failures'],
+        $summary['failures'],
+        $summary['purged'],
+        $summary['alerts_sent']
+    ));
+
+    foreach ($summary['results'] as $result) {
+        fwrite(STDOUT, sprintf(
+            "  [%s] #%d %s — %s\n",
+            $result['ok'] ? 'OK' : '--',
+            $result['form_id'],
+            $result['form_name'],
+            $result['detail']
+        ));
+    }
+
+    // The one nonzero case: a needed alert email could not be sent. Print it so
+    // cron mails the operator — the backstop when SMTP alerting is itself down.
+    if ($summary['alert_error'] !== null) {
+        fwrite(STDERR, 'monitor:run could not alert: ' . $summary['alert_error'] . "\n");
+        return 1;
+    }
+
+    return 0;
+}
+
+/**
+ * monitor:status — per-form last check, result and next due time. Read-only.
+ */
+function cmdMonitorStatus(Database $db, Config $config, Paths $paths): int
+{
+    $monitor = buildMonitorService($db, $config, $paths);
+    $rows = $monitor->status();
+
+    if ($rows === []) {
+        fwrite(STDOUT, "No active forms to monitor.\n");
+        return 0;
+    }
+
+    foreach ($rows as $row) {
+        $result = $row['last_ok'] === null ? 'never checked' : ($row['last_ok'] ? 'ok' : 'FAILED');
+        fwrite(STDOUT, sprintf(
+            "#%d %s%s\n    last check: %s (%s)\n    next due:   %s\n",
+            $row['form_id'],
+            $row['form_name'],
+            $row['is_canary'] ? ' [canary]' : '',
+            $row['last_checked_at'] ?? 'never',
+            $result,
+            $row['next_due']
+        ));
+    }
+
+    return 0;
+}
+
+/**
+ * Assemble the MonitorService from real production collaborators: a curl HTTP
+ * client, the SMTP transport for alerts, the config writer for the first-run
+ * MONITOR_SECRET write-back, the system clock and a real sleeper.
+ */
+function buildMonitorService(Database $db, Config $config, Paths $paths): MonitorService
+{
+    $hasher = new PasswordHasher();
+
+    return new MonitorService(
+        new CurlHttpClient(),
+        new FormRepository($db),
+        new SubmissionRepository($db),
+        new MonitorRepository($db),
+        new PhpMailerMailer($config),
+        new AdminRepository($db, $hasher, new RecoveryCodes($hasher)),
+        $config,
+        new ConfigWriter($paths->configPath),
+        new SystemClock(),
+        new RealSleeper()
+    );
+}
+
+/**
  * Assemble a DeliveryService from the configured SMTP transport.
  */
 function buildDeliveryService(Database $db, Config $config): DeliveryService
@@ -796,6 +908,8 @@ function usage(): string
       bin/osf mail:status
       bin/osf submissions:list [--status=STATUS]
       bin/osf submissions:purge [--status=STATUS] [--form=ID]
+      bin/osf monitor:run
+      bin/osf monitor:status
       bin/osf install:status
       bin/osf migrate
       bin/osf version
@@ -824,6 +938,18 @@ function usage(): string
         flags removes every submission, --status limits to one status, --form
         removes one form's submissions (unknown ID refused). --status and
         --form cannot be combined.
+      monitor:run is the single cron entry point for synthetic monitoring: it
+        sends real fake-but-marked submissions through the FULL public pipeline
+        (token -> min-time -> POST -> store -> SMTP delivery to the form's real
+        recipient), records each result, alerts on ok<->fail transitions and
+        auto-purges expired synthetic submissions. It always exits 0 when checks
+        ran (failures are alerted, not errors) and nonzero only when it cannot
+        alert. Recommended cPanel cron (hourly):
+          0 * * * * /usr/local/bin/php /home/USER/opensendform/bin/osf monitor:run
+        (adjust the PHP path and project path for your host; the same style as
+        the mail:retry cron line.)
+      monitor:status prints each active form's last check, result and next due
+        time; read-only.
       install:status reports whether the browser installer has run (config +
         lock files); it never connects to or creates a database.
       migrate applies any pending schema migrations and reports what it did;

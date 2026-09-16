@@ -18,6 +18,13 @@ final class SubmitContext
     public const FIELD_TOKEN = '_osf_token';
     public const FIELD_HONEYPOT = '_osf_hp';
     public const FIELD_TURNSTILE = '_osf_cf';
+    /**
+     * The synthetic-monitor marker: the monitor sends its shared secret here.
+     * Like every reserved field it is stripped from stored content and never
+     * bypasses a stage; the store stage compares it to MONITOR_SECRET and, on
+     * an exact match, records the submission as synthetic.
+     */
+    public const FIELD_MONITOR = '_osf_monitor';
 
     public ServerRequestInterface $request;
 
@@ -52,6 +59,13 @@ final class SubmitContext
 
     /** The Turnstile client token (reserved field _osf_cf), if supplied. */
     public ?string $turnstileToken = null;
+
+    /**
+     * The value of the reserved _osf_monitor field, if supplied. The store
+     * stage compares it to the configured MONITOR_SECRET to decide whether the
+     * stored row is synthetic; it never affects any earlier stage.
+     */
+    public ?string $monitorSecret = null;
 
     /**
      * The looked-up, active form (set by the form-lookup stage).

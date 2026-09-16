@@ -226,6 +226,26 @@ final class Config
             // failure, the last value repeating if failures exceed the list.
             'MAIL_MAX_ATTEMPTS'      => '5',
             'MAIL_RETRY_BACKOFF_MINUTES' => '1,5,30,120',
+
+            // Synthetic monitoring (bin/osf monitor:run). All optional; the
+            // monitor generates and writes back a MONITOR_SECRET on first run
+            // when it is still empty. The secret marks a synthetic submission
+            // AFTER the pipeline stores it (reserved field _osf_monitor); a
+            // wrong/absent secret is an ordinary submission.
+            'MONITOR_SECRET'             => '',
+            // Days a synthetic submission is kept before the monitor purges it.
+            'MONITOR_RETENTION_DAYS'     => '2',
+            // The form checked on every run. Empty = the lowest-ID active form.
+            'MONITOR_CANARY_FORM_ID'     => '',
+            // Every OTHER active form is checked at most once per this many
+            // hours, its due times spread across forms (staggered).
+            'MONITOR_FORM_INTERVAL_HOURS' => '24',
+            // How long a check waits for the stored submission to reach 'sent'.
+            'MONITOR_SEND_TIMEOUT_SECONDS' => '30',
+            // Where alert/recovery emails go. Empty = the first admin's email.
+            'MONITOR_ALERT_EMAIL'        => '',
+            // The base URL the monitor drives its real HTTP submissions against.
+            'MONITOR_BASE_URL'           => 'http://localhost:8080',
         ];
     }
 
@@ -416,6 +436,73 @@ final class Config
         }
 
         return $minutes === [] ? [1] : $minutes;
+    }
+
+    // --- Synthetic monitoring ---------------------------------------------
+
+    /**
+     * The shared secret that marks a submission synthetic. Empty until the
+     * monitor generates one on first run (written back via ConfigWriter).
+     * When empty, no submission is ever treated as synthetic.
+     */
+    public function monitorSecret(): string
+    {
+        return $this->get('MONITOR_SECRET');
+    }
+
+    /**
+     * Days a synthetic submission is retained before the monitor purges it.
+     * Clamped to at least 1 so a zero/negative value never purges everything
+     * the instant it is written.
+     */
+    public function monitorRetentionDays(): int
+    {
+        return max(1, (int) $this->get('MONITOR_RETENTION_DAYS'));
+    }
+
+    /**
+     * The configured canary form id, or null to let the monitor default to the
+     * lowest-ID active form. A blank or non-positive value means "unset".
+     */
+    public function monitorCanaryFormId(): ?int
+    {
+        $value = trim($this->get('MONITOR_CANARY_FORM_ID'));
+
+        return ($value !== '' && ctype_digit($value) && (int) $value > 0) ? (int) $value : null;
+    }
+
+    /**
+     * Minimum hours between checks of a non-canary form. At least 1.
+     */
+    public function monitorFormIntervalHours(): int
+    {
+        return max(1, (int) $this->get('MONITOR_FORM_INTERVAL_HOURS'));
+    }
+
+    /**
+     * Seconds a check waits for its stored submission to reach 'sent'. At
+     * least 1 so the poll always runs at least once.
+     */
+    public function monitorSendTimeoutSeconds(): int
+    {
+        return max(1, (int) $this->get('MONITOR_SEND_TIMEOUT_SECONDS'));
+    }
+
+    /**
+     * The alert recipient, or '' to fall back to the first admin's email.
+     */
+    public function monitorAlertEmail(): string
+    {
+        return trim($this->get('MONITOR_ALERT_EMAIL'));
+    }
+
+    /**
+     * The base URL the monitor drives its synthetic submissions against, with
+     * any trailing slash removed.
+     */
+    public function monitorBaseUrl(): string
+    {
+        return rtrim(trim($this->get('MONITOR_BASE_URL')), '/');
     }
 
     /**

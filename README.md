@@ -196,6 +196,30 @@ is unreachable it is left `failed` with a scheduled retry; `php bin/osf
 mail:retry` (wire it to cron on cPanel) re-sends everything due. A quick
 transport check without a submission: `php bin/osf mail:test --to=you@example.com`.
 
+## Synthetic monitoring (optional, recommended)
+
+So you learn of breakage before your visitors do, `php bin/osf monitor:run`
+sends a real *fake-but-marked* submission through the FULL public pipeline —
+token fetch, min-time wait, POST, store, and SMTP delivery to the form's real
+recipient (subject/body carry an unmistakable `[OpenSendForm monitor]` marker
+so you can filter them). It checks a canary form every run and each other form
+at most once a day, staggered. A check fails if any step errors or the
+submission is not delivered within the send timeout; on an ok→fail (or
+fail→ok) transition it emails one alert (to `MONITOR_ALERT_EMAIL`, or the first
+admin), and the dashboard shows a red banner while any form is failing.
+Synthetic submissions are excluded from the dashboard stats and the default
+submissions list (see the "synthetic" filter) and auto-purged after a couple of
+days. Wire it to cron on cPanel, hourly, alongside `mail:retry`:
+
+```
+0 * * * * /usr/local/bin/php /home/USER/opensendform/bin/osf monitor:run
+```
+
+`php bin/osf monitor:status` prints each form's last check, result and next due
+time. The base URL, secret, retention, interval, send timeout and alert
+recipient are all configurable via `MONITOR_*` settings (env or config file);
+the secret is generated and written back automatically on first run.
+
 ## Cloudflare Turnstile (optional, per form)
 
 [Turnstile](https://developers.cloudflare.com/turnstile/) is Cloudflare's

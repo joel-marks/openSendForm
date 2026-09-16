@@ -230,3 +230,45 @@
    and nonzero exit, rather than silently ignoring one filter or adding an
    off-contract repository method. Flag if a combined-filter purge is wanted;
    it would need a new `deleteFiltered(status, formId)` method. No blocker.
+
+## feature/synthetic-monitoring (2026-09-09)
+
+1. **monitor:run exit-code for an unreachable endpoint vs a failed check —
+   decision recorded, non-blocking.** The rulings list "cannot reach the local
+   HTTP endpoint" under the nonzero "monitor cannot operate" exit, but ALSO
+   list "token fetch [error]" / "POST non-ok" under a normal *check failure*
+   (exit 0, recorded + alerted). These overlap: a connection-refused during a
+   check is both. Resolved in favour of treating any per-check transport error
+   (token fetch or POST) as a FAILED CHECK — recorded, and an alert email
+   attempted — because an unreachable public endpoint IS the breakage the
+   operator must hear about, and the alert email is the primary channel.
+   `monitor:run` therefore exits 0 whenever checks ran (failures included) and
+   nonzero ONLY when a needed alert email itself could not be sent (the ruling's
+   explicit "cannot alert" case), so cron output becomes the backstop. A fatal
+   pre-check error (e.g. the database is unreachable) still surfaces as a
+   nonzero exit via the CLI's top-level try/catch. Flag if a bare unreachable
+   endpoint should instead exit nonzero without alerting; no blocker.
+
+2. **Synthetic requests share one source IP against the per-IP rate limit —
+   operational note, non-blocking.** Synthetic checks are REAL submissions and
+   (by ruling) bypass no stage, so they count toward `RATE_IP_PER_MINUTE` /
+   `RATE_FORM_PER_HOUR`, all originating from the server's own address. The
+   staggered schedule (canary + due rechecks + at most one newly-introduced
+   form per run) keeps a normal hourly run well under the defaults, and each
+   check spends the min-submit wait between its token fetch and POST. A
+   pathological config (many forms all due in the same run) could still trip
+   the per-IP minute limit and self-report a false failure. Documented rather
+   than special-cased, since exempting the monitor from a stage would violate
+   the "never bypasses any stage" ruling. Flag if an operator hits it; the fix
+   would be a trusted-source allowance in the rate-limit stage, out of scope here.
+
+3. **Marker lives in the email BODY, not the Subject — decision recorded,
+   non-blocking.** The ruling asks for an "unmistakable subject/body marker
+   (e.g. `[OpenSendForm monitor]` + timestamp)". The delivered submission's
+   Subject is derived by `MessageBuilder` from the form name (frozen-ish mail
+   path; changing it risks the "no submitter content in a header" rule), so the
+   marker is injected as a normal `message` field and appears prominently in the
+   body with a UTC timestamp. Recipients can filter on it. (The separate ALERT
+   emails the monitor sends DO carry the marker in their subject.) Flag if a
+   subject-line marker on the delivered probe is required; it would need a
+   small, careful `MessageBuilder` change. No blocker.

@@ -25,7 +25,7 @@ final class MigrationRunnerTest extends TestCase
         self::assertContains('001_create_schema_migrations.sql', $applied);
 
         // schema_migrations table now exists and records every migration.
-        self::assertSame([1, 2, 3, 4, 5, 6, 7, 8, 9], $runner->appliedVersions());
+        self::assertSame([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], $runner->appliedVersions());
     }
 
     public function testIsIdempotentOnSecondRun(): void
@@ -40,7 +40,7 @@ final class MigrationRunnerTest extends TestCase
 
         // Nothing pending the second time around.
         self::assertSame([], $secondRun);
-        self::assertSame([1, 2, 3, 4, 5, 6, 7, 8, 9], $runner->appliedVersions());
+        self::assertSame([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], $runner->appliedVersions());
     }
 
     public function testAppliedVersionsEmptyBeforeMigrating(): void

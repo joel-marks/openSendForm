@@ -1,6 +1,6 @@
 # OpenSendForm — current state
 
-Last updated: 2026-09-08 (feature/form-submission-deletion, Claude Code)
+Last updated: 2026-09-09 (feature/synthetic-monitoring, Claude Code)
 
 ## Status
 The service is end-to-end: a versioned v1 API drives an ordered
@@ -9,11 +9,12 @@ authenticated SMTP (in-request send + operator retry sweep). Full admin panel
 (auth, 2FA, forms/submissions CRUD, mail-setup wizard, browser installer), a
 client-site embed artefact with a no-JS fallback, dev tooling, an explicit
 migration command, guarded admin deletion, form + submission deletion (web +
-CLI) and release packaging (v0.1.0 zip + `.htaccess` set + `bin/osf version`)
+CLI), release packaging (v0.1.0 zip + `.htaccess` set + `bin/osf version`) and
+now synthetic monitoring + alerting (real end-to-end probes via cron)
 are all built and merged to main. The
 design system is a bespoke `--osf-*` token contract with a two-row
 GitHub-aligned header on ONE shared surface, Dark/Light/Auto theme, vendored
-Lucide icons and responsive card-collapse tables. Suite green (518 tests).
+Lucide icons and responsive card-collapse tables. Suite green (548 tests).
 CI runs tests + a package build/verify on every PR/push.
 
 ## Product definition
@@ -46,7 +47,11 @@ authenticated SMTP to the site owner.
 method/body size → field hygiene → form lookup by URL key → origin allowlist
 → per-IP then per-form rate limits → honeypot → token → Turnstile (optional)
 → email (syntax + bounded MX/A) → store → delivery (terminal, always succeeds).
-Locked by SubmitPipelineOrderTest. The stage ORDER is locked.
+Locked by SubmitPipelineOrderTest. The stage ORDER is locked. Synthetic-monitor
+marking rides on the store stage only: a request whose reserved `_osf_monitor`
+field matches the configured `MONITOR_SECRET` (constant-time) is flagged
+`submissions.is_synthetic`; a wrong/absent/empty secret is an ordinary
+submission and the reserved field never lets one skip a stage.
 
 ## Mail delivery + retry (updated this sprint)
 - In-request: DeliveryStage makes at most one send attempt, then always returns
@@ -122,6 +127,28 @@ Locked by SubmitPipelineOrderTest. The stage ORDER is locked.
   action by hand (pure HTML cannot inject a query param; harness must not
   server-render).
 
+## Synthetic monitoring + alerting (this sprint — see HISTORY for detail)
+- `bin/osf monitor:run` (single cron entry point, hourly) + `monitor:status`
+  in `src/Monitor/`. Each run: ensure `MONITOR_SECRET` (generate + config
+  write-back if empty), purge synthetics older than `MONITOR_RETENTION_DAYS`
+  (2), then check the CANARY (`MONITOR_CANARY_FORM_ID`, default lowest-id
+  active) every run + each other active form ≤ once per
+  `MONITOR_FORM_INTERVAL_HOURS` (24), staggered (never-checked introduced one
+  per run — `MonitorSchedule`). A check is a REAL submission via the public
+  endpoints against `MONITOR_BASE_URL` (default http://localhost:8080): GET
+  token → wait min-submit-time → POST marked content (`_osf_monitor` secret +
+  `[OpenSendForm monitor]` body marker + the form's recipient email) → poll the
+  stored synthetic row to `sent` within `MONITOR_SEND_TIMEOUT_SECONDS` (30). Any
+  errored step / non-ok POST / no-`sent`-in-time = FAIL.
+- State lives in `monitor_checks`. One alert on ok→fail (incl. first fail) and
+  fail→ok to `MONITOR_ALERT_EMAIL` or the first admin; no repeat while failed.
+  `monitor:run` exits 0 when checks ran (failures are alerted) and nonzero only
+  when a needed alert can't send (cron backstop). Dashboard shows a red banner
+  naming forms whose latest check failed (cleared by a later pass). Synthetics
+  are excluded from stats + the default list; a "synthetic" filter exposes them.
+  Network + sleep are behind interfaces so the suite drives the whole monitor
+  against an in-process app with no live server.
+
 ## Other subsystems — condensed; see HISTORY
 - Admin deletion: hard-delete + reversible deactivate; three guards.
 - Form/submission deletion: repos expose `SubmissionRepository::deleteById/
@@ -146,7 +173,6 @@ Locked by SubmitPipelineOrderTest. The stage ORDER is locked.
   Composer deps: phpmailer ^6, slim ^4, slim/psr7, php-di/php-di.
 
 ## Known gaps / not built (by design)
-- Synthetic monitoring + alerting — the remaining planned increment.
 - No AUTOMATIC migration trigger on upgrade (manual `bin/osf migrate` + banner).
 - Password reset by email, roles/permissions, audit log; file uploads /
   redirect success URLs (out of embed scope).
@@ -154,13 +180,18 @@ Locked by SubmitPipelineOrderTest. The stage ORDER is locked.
   DNS is now unit-tested via the `DnsTransport` seam; only the real
   `UdpDnsTransport` socket path (network) is not. osf.js DOM behaviour is
   verified by ad-hoc headless-browser checks, not CI (no DOM harness by policy).
+  The monitor's real `CurlHttpClient` socket path is likewise the only monitor
+  code the suite does not drive (bound behind `HttpClient`); everything else is.
 
 ## Open items
-None blocking. QUESTIONS.md carries prior resolved/non-blocking notes plus one
-new non-blocking note this sprint (`submissions:purge` --status/--form not
-combinable, given the status-only / form-only repository deletion contract).
+None blocking. QUESTIONS.md carries prior resolved/non-blocking notes plus three
+new non-blocking notes this sprint: (1) monitor:run treats an unreachable
+endpoint as a failed check (alert) and reserves its nonzero exit for
+"cannot alert"; (2) synthetics count toward the per-IP rate limit (staggering
+keeps normal runs safe); (3) the delivered probe's marker sits in the body
+(subject derives from the form name), while alert emails carry it in the subject.
 
 ## Planned increment sequence
-0–8 (skeleton → schema → pipeline → SMTP → Turnstile → admin auth → design
-system → installer → embed → packaging) ALL DONE. 9. Synthetic monitoring +
-alerting.
+0–9 (skeleton → schema → pipeline → SMTP → Turnstile → admin auth → design
+system → installer → embed → packaging → synthetic monitoring + alerting)
+ALL DONE.

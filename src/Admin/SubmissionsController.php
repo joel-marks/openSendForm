@@ -28,6 +28,13 @@ final class SubmissionsController
     /** Statuses offered in the filter (and the only valid filter values). */
     private const STATUSES = ['received', 'sent', 'failed', 'dead'];
 
+    /**
+     * Special filter value exposing the synthetic monitor probes, which are
+     * hidden from every other view. Orthogonal to the real delivery statuses:
+     * it selects is_synthetic = 1 rows regardless of their delivery status.
+     */
+    private const SYNTHETIC_FILTER = 'synthetic';
+
     // --- List -------------------------------------------------------------
 
     public static function index(
@@ -37,31 +44,36 @@ final class SubmissionsController
     ): ResponseInterface {
         $query = $request->getQueryParams();
 
-        $status = self::cleanStatus($query['status'] ?? null);
+        $syntheticView = self::isSyntheticFilter($query['status'] ?? null);
+        // In the synthetic view the delivery-status filter does not apply.
+        $status = $syntheticView ? null : self::cleanStatus($query['status'] ?? null);
         $formId = self::cleanFormId($query['form'] ?? null);
         $page = max(1, (int) ($query['page'] ?? 1));
 
         $submissions = self::submissions($c);
-        $total = $submissions->countFiltered($status, $formId);
+        $total = $submissions->countFiltered($status, $formId, $syntheticView);
         $pages = max(1, (int) ceil($total / self::PER_PAGE));
         $page = min($page, $pages);
         $offset = ($page - 1) * self::PER_PAGE;
 
-        $rows = $submissions->listPage($status, $formId, self::PER_PAGE, $offset);
+        $rows = $submissions->listPage($status, $formId, self::PER_PAGE, $offset, $syntheticView);
 
         return AdminView::renderPage($c, $response, 'submissions', [
             'title'    => 'Submissions',
             'rows'     => $rows,
             'forms'    => self::forms($c)->listForms(),
             'statuses' => self::STATUSES,
-            'status'   => $status ?? '',
+            'status'   => $syntheticView ? self::SYNTHETIC_FILTER : ($status ?? ''),
+            'syntheticView' => $syntheticView,
             'formId'   => $formId,
             'page'     => $page,
             'pages'    => $pages,
             'total'    => $total,
             // "Delete all" is scoped by STATUS only (never the form filter), so
             // its count can differ from $total when a form filter is active.
-            'deleteAllCount' => $submissions->countFiltered($status, null),
+            // It is disabled entirely in the synthetic view: those probes are
+            // auto-purged by the monitor, not deleted by hand here.
+            'deleteAllCount' => $syntheticView ? 0 : $submissions->countFiltered($status, null),
         ], 'submissions');
     }
 
@@ -283,7 +295,7 @@ final class SubmissionsController
         $formId = self::cleanFormId($source['form'] ?? null);
 
         return [
-            'status' => self::cleanStatus($source['status'] ?? null) ?? '',
+            'status' => self::viewStatus($source['status'] ?? null),
             'form'   => $formId === null ? '' : (string) $formId,
             'page'   => (string) max(1, (int) ($source['page'] ?? 1)),
         ];
@@ -328,6 +340,25 @@ final class SubmissionsController
         return in_array($status, self::STATUSES, true) ? $status : null;
     }
 
+    private static function isSyntheticFilter(mixed $status): bool
+    {
+        return $status === self::SYNTHETIC_FILTER;
+    }
+
+    /**
+     * The status value to carry through hidden fields and back-links so the
+     * current view is preserved — a real delivery status, the special
+     * 'synthetic' view, or '' for the default list.
+     */
+    private static function viewStatus(mixed $status): string
+    {
+        if (self::isSyntheticFilter($status)) {
+            return self::SYNTHETIC_FILTER;
+        }
+
+        return self::cleanStatus($status) ?? '';
+    }
+
     private static function cleanFormId(mixed $form): ?int
     {
         if (is_string($form) && ctype_digit($form) && (int) $form > 0) {
@@ -348,11 +379,11 @@ final class SubmissionsController
     private static function redirectBack(ResponseInterface $response, array $data): ResponseInterface
     {
         $params = [];
-        $status = self::cleanStatus($data['status'] ?? null);
+        $status = self::viewStatus($data['status'] ?? null);
         $formId = self::cleanFormId($data['form'] ?? null);
         $page = (int) ($data['page'] ?? 1);
 
-        if ($status !== null) {
+        if ($status !== '') {
             $params['status'] = $status;
         }
         if ($formId !== null) {

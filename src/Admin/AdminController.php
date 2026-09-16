@@ -241,9 +241,24 @@ final class AdminController
         $paths = $c->get(\OpenSendForm\Install\Paths::class);
         $pendingMigrations = (new \OpenSendForm\Storage\MigrationRunner($db, $paths->migrationsPath))->pendingCount();
 
+        // The dashboard must render even mid-upgrade so the "run bin/osf migrate"
+        // banner is visible. A stale schema may lack columns/tables this code
+        // reads (e.g. submissions.is_synthetic and monitor_checks from migration
+        // 010), so the schema-dependent queries run ONLY when the schema is
+        // current; while a migration is pending the counts default to zero and
+        // the banner does the talking. Once migrated, the real figures return.
+        $schemaCurrent = $pendingMigrations === 0;
+
+        // Synthetic-monitoring banner: forms whose LATEST check failed. Shown
+        // until a later passing check clears them (state lives in monitor_checks).
+        $monitorFailures = $schemaCurrent
+            ? (new \OpenSendForm\Monitor\MonitorRepository($db))->failingForms()
+            : [];
+
         return AdminView::renderPage($c, $response, 'dashboard', [
             'title'        => 'Dashboard',
             'totpEnabled'  => $totpEnabled,
+            'monitorFailures' => $monitorFailures,
             // Nudge shows only when 2FA is off and the admin has not dismissed
             'showNudge'    => !$totpEnabled && !$nudgeDismissed,
             // Mirror the 2FA nudge for email: shown while sending is off and the
@@ -251,10 +266,10 @@ final class AdminController
             'showMailNudge' => !$mailEnabled && !$mailNudgeDismissed,
             'pendingMigrations' => $pendingMigrations,
             'activeForms'  => $forms->countActive(),
-            'todayCount'   => $submissions->countSince($todayStart),
-            'failedCount'  => $submissions->countByStatus('failed'),
-            'deadCount'    => $submissions->countByStatus('dead'),
-            'recent'       => $submissions->recentByStatuses(['failed', 'dead'], 10),
+            'todayCount'   => $schemaCurrent ? $submissions->countSince($todayStart) : 0,
+            'failedCount'  => $schemaCurrent ? $submissions->countByStatus('failed') : 0,
+            'deadCount'    => $schemaCurrent ? $submissions->countByStatus('dead') : 0,
+            'recent'       => $schemaCurrent ? $submissions->recentByStatuses(['failed', 'dead'], 10) : [],
         ], 'dashboard');
     }
 

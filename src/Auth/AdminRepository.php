@@ -240,15 +240,33 @@ final class AdminRepository
     }
 
     /**
-     * Turn off TOTP and clear its secret and recovery codes.
+     * Turn off TOTP and clear its secret, recovery codes AND the replay marker.
+     * Clearing totp_last_timestep means a subsequent fresh enrolment starts with
+     * a clean slate (any timestep's first code is accepted), and `admin:reset-2fa`
+     * — which calls this — leaves no stale replay state behind.
      */
     public function disableTotp(int $id): void
     {
         $this->db->execute(
             'UPDATE admins
-                SET totp_enabled = 0, totp_secret = NULL, recovery_codes = NULL, updated_at = :now
+                SET totp_enabled = 0, totp_secret = NULL, recovery_codes = NULL,
+                    totp_last_timestep = NULL, updated_at = :now
               WHERE id = :id',
             ['now' => self::now(), 'id' => $id]
+        );
+    }
+
+    /**
+     * Record the RFC 6238 counter (timestep) of the TOTP code just accepted for
+     * an admin, so it can never be replayed within its validity window. Callers
+     * only ever advance this forwards (they accept a code solely when it matches
+     * a strictly larger timestep).
+     */
+    public function recordTotpTimestep(int $id, int $timestep): void
+    {
+        $this->db->execute(
+            'UPDATE admins SET totp_last_timestep = :ts, updated_at = :now WHERE id = :id',
+            ['ts' => $timestep, 'now' => self::now(), 'id' => $id]
         );
     }
 
@@ -323,6 +341,8 @@ final class AdminRepository
             'totp_enabled'   => (int) $row['totp_enabled'],
             'recovery_codes' => isset($row['recovery_codes']) && $row['recovery_codes'] !== null
                 ? (string) $row['recovery_codes'] : null,
+            'totp_last_timestep' => isset($row['totp_last_timestep']) && $row['totp_last_timestep'] !== null
+                ? (int) $row['totp_last_timestep'] : null,
             'is_active'      => (int) ($row['is_active'] ?? 1),
             'created_at'     => (string) $row['created_at'],
             'updated_at'     => (string) $row['updated_at'],

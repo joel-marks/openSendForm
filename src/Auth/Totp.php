@@ -51,24 +51,37 @@ final class Totp
      */
     public function verify(string $secretBase32, string $code, int $timestamp, int $window = 1): bool
     {
+        return $this->matchedCounter($secretBase32, $code, $timestamp, $window) !== null;
+    }
+
+    /**
+     * As verify(), but returns WHICH counter (timestep) the code matched, or
+     * null if it matched none. Callers enforcing replay prevention persist this
+     * counter and refuse any later code that does not match a strictly larger
+     * one. The whole window is scanned even after a hit so timing does not leak
+     * which counter matched; if more than one candidate matches (degenerate,
+     * effectively impossible for distinct counters) the largest is returned so
+     * the replay pointer never moves backwards.
+     */
+    public function matchedCounter(string $secretBase32, string $code, int $timestamp, int $window = 1): ?int
+    {
         $code = trim($code);
         if (preg_match('/^\d{' . $this->digits . '}$/', $code) !== 1) {
-            return false;
+            return null;
         }
 
         $key = Base32::decode($secretBase32);
         if ($key === '') {
-            return false;
+            return null;
         }
 
         $baseCounter = intdiv($timestamp, $this->period);
-        $matched = false;
-        // Scan the whole window even after a hit so timing does not leak
-        // which counter matched.
+        $matched = null;
         for ($offset = -$window; $offset <= $window; $offset++) {
-            $candidate = $this->hotp($key, $baseCounter + $offset);
+            $counter = $baseCounter + $offset;
+            $candidate = $this->hotp($key, $counter);
             if (hash_equals($candidate, $code)) {
-                $matched = true;
+                $matched = $counter;
             }
         }
 

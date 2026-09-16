@@ -1,0 +1,15 @@
+-- Migration 011: TOTP replay prevention.
+--
+-- admins.totp_last_timestep — the RFC 6238 counter (unix time / period) of the
+-- most recent TOTP code accepted for this admin, across BOTH the login second
+-- factor and every sensitive-action re-authentication (disable 2FA, regenerate
+-- recovery codes) and the enrolment confirmation. A code is accepted only when
+-- it matches a timestep STRICTLY LATER than this stored value, then this value
+-- advances to the matched timestep. That makes a code single-use within its
+-- validity window: the same code (or any earlier one still inside the +/- skew
+-- window) can never be replayed for a second action.
+--
+-- NULL means no TOTP code has been accepted yet (a freshly enrolled or
+-- 2FA-reset admin), so the first code of any timestep is accepted. Portable
+-- types only (INTEGER) so the schema is identical on sqlite and mysql.
+ALTER TABLE admins ADD COLUMN totp_last_timestep INTEGER NULL;

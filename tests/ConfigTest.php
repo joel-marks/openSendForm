@@ -70,6 +70,13 @@ final class ConfigTest extends TestCase
         self::assertSame(3600, $config->tokenMaxAgeSeconds());
         self::assertSame(5, $config->rateIpPerMinute());
         self::assertSame(60, $config->rateFormPerHour());
+
+        // Login-limiter defaults reproduce the previously hard-coded values.
+        self::assertSame(10, $config->rateLoginPerIp());
+        self::assertSame(5, $config->rateLoginPerEmail());
+        self::assertSame(900, $config->rateLoginWindowSeconds());
+        self::assertSame(5, $config->rateTotpPerAdmin());
+        self::assertSame(10, $config->rateTotpPerIp());
     }
 
     public function testSubmissionValuesAreEnvOverridable(): void
@@ -81,6 +88,35 @@ final class ConfigTest extends TestCase
 
         self::assertSame(1024, $config->maxBodyBytes());
         self::assertSame(9, $config->rateIpPerMinute());
+    }
+
+    public function testLoginLimiterValuesAreEnvOverridable(): void
+    {
+        $config = Config::fromEnvironment([
+            'RATE_LOGIN_PER_IP'         => '3',
+            'RATE_LOGIN_PER_EMAIL'      => '2',
+            'RATE_LOGIN_WINDOW_SECONDS' => '120',
+            'RATE_TOTP_PER_ADMIN'       => '4',
+            'RATE_TOTP_PER_IP'          => '7',
+        ]);
+
+        self::assertSame(3, $config->rateLoginPerIp());
+        self::assertSame(2, $config->rateLoginPerEmail());
+        self::assertSame(120, $config->rateLoginWindowSeconds());
+        self::assertSame(4, $config->rateTotpPerAdmin());
+        self::assertSame(7, $config->rateTotpPerIp());
+    }
+
+    public function testLoginLimiterValuesClampToAtLeastOne(): void
+    {
+        // A misconfigured zero must never lock everyone out permanently.
+        $config = Config::fromEnvironment([
+            'RATE_LOGIN_PER_IP'    => '0',
+            'RATE_LOGIN_PER_EMAIL' => '0',
+        ]);
+
+        self::assertSame(1, $config->rateLoginPerIp());
+        self::assertSame(1, $config->rateLoginPerEmail());
     }
 
     public function testAppSecretEmptyByDefaultInProduction(): void

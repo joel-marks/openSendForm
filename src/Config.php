@@ -207,8 +207,28 @@ final class Config
             'TOKEN_MAX_AGE_SECONDS'  => '3600',
 
             // Fixed-window rate limits.
+            // Public submission endpoint: per-IP (60s window) then per-form
+            // (3600s window). The window widths are fixed by the key names;
+            // only the counts are tunable.
             'RATE_IP_PER_MINUTE'     => '5',
             'RATE_FORM_PER_HOUR'     => '60',
+
+            // Admin login limiter (all share one fixed window,
+            // RATE_LOGIN_WINDOW_SECONDS): a password attempt is counted per-IP
+            // and per-email; a TOTP/second-factor attempt per-admin and per-IP.
+            // Defaults reproduce the previously hard-coded values, so an
+            // out-of-the-box install behaves exactly as before.
+            'RATE_LOGIN_PER_IP'        => '10',
+            'RATE_LOGIN_PER_EMAIL'     => '5',
+            'RATE_LOGIN_WINDOW_SECONDS' => '900',
+            'RATE_TOTP_PER_ADMIN'      => '5',
+            'RATE_TOTP_PER_IP'         => '10',
+
+            // Trusted reverse proxies, comma-separated IPs and/or CIDR ranges.
+            // Empty by default: the client IP is REMOTE_ADDR and X-Forwarded-For
+            // is ignored. When REMOTE_ADDR is in this list, the client IP is
+            // derived from the rightmost X-Forwarded-For entry not in the list.
+            'TRUSTED_PROXIES'          => '',
 
             // SMTP authentication (empty = no auth, as with Mailpit in dev).
             'SMTP_USER'              => '',
@@ -377,6 +397,56 @@ final class Config
     public function rateFormPerHour(): int
     {
         return (int) $this->get('RATE_FORM_PER_HOUR');
+    }
+
+    /**
+     * Max password-login attempts per IP within the login window. At least 1
+     * so a misconfigured zero can never lock everyone out permanently.
+     */
+    public function rateLoginPerIp(): int
+    {
+        return max(1, (int) $this->get('RATE_LOGIN_PER_IP'));
+    }
+
+    /**
+     * Max password-login attempts per email address within the login window.
+     */
+    public function rateLoginPerEmail(): int
+    {
+        return max(1, (int) $this->get('RATE_LOGIN_PER_EMAIL'));
+    }
+
+    /**
+     * The fixed window (seconds) shared by the login and second-factor limiters.
+     */
+    public function rateLoginWindowSeconds(): int
+    {
+        return max(1, (int) $this->get('RATE_LOGIN_WINDOW_SECONDS'));
+    }
+
+    /**
+     * Max second-factor (TOTP/recovery) attempts per admin within the window.
+     */
+    public function rateTotpPerAdmin(): int
+    {
+        return max(1, (int) $this->get('RATE_TOTP_PER_ADMIN'));
+    }
+
+    /**
+     * Max second-factor (TOTP/recovery) attempts per IP within the window.
+     */
+    public function rateTotpPerIp(): int
+    {
+        return max(1, (int) $this->get('RATE_TOTP_PER_IP'));
+    }
+
+    /**
+     * The raw, comma-separated TRUSTED_PROXIES value (IPs and/or CIDR ranges).
+     * Empty means no proxy is trusted, so the client IP is always REMOTE_ADDR.
+     */
+    public function trustedProxies(): string
+    {
+        return $this->get('TRUSTED_PROXIES');
     }
 
     public function smtpUser(): string

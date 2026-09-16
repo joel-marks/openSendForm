@@ -25,7 +25,7 @@ final class SchemaMigrationsTest extends TestCase
         self::assertContains('002_create_forms.sql', $applied);
         self::assertContains('003_create_submissions.sql', $applied);
         self::assertContains('004_create_rate_counters.sql', $applied);
-        self::assertSame([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], $runner->appliedVersions());
+        self::assertSame([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], $runner->appliedVersions());
 
         // All tables now exist and are queryable.
         self::assertTableExists($db, 'forms');
@@ -42,7 +42,7 @@ final class SchemaMigrationsTest extends TestCase
         $secondRun = $runner->migrate();
 
         self::assertSame([], $secondRun);
-        self::assertSame([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], $runner->appliedVersions());
+        self::assertSame([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], $runner->appliedVersions());
     }
 
     public function testSubmissionsIndexExists(): void
@@ -96,7 +96,7 @@ final class SchemaMigrationsTest extends TestCase
         foreach (
             ['id', 'email', 'display_name', 'password_hash', 'totp_secret',
              'totp_enabled', 'recovery_codes', 'is_active', 'created_at',
-             'updated_at', 'last_login_at'] as $column
+             'updated_at', 'last_login_at', 'totp_last_timestep'] as $column
         ) {
             self::assertContains($column, $columns);
         }

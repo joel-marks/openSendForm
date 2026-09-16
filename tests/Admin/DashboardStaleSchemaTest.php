@@ -40,9 +40,9 @@ final class DashboardStaleSchemaTest extends TestCase
 
     public function testBannerPresentWithAStaleFixtureDatabase(): void
     {
-        // One migration behind (010 shipped in code, not yet applied here).
+        // One migration behind (011 shipped in code, not yet applied here).
         $db = Database::connect('sqlite::memory:');
-        $this->migrateUpToVersion($db, 9);
+        $this->migrateUpToVersion($db, 10);
 
         $body = (string) $this->dashboard($db)->getBody();
 

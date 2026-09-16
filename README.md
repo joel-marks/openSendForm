@@ -381,6 +381,30 @@ Forms can equally be provisioned from the CLI — see `php bin/osf form:create`
 and `php bin/osf form:turnstile` above — so scripted setup and the UI stay
 interchangeable.
 
+### Locked out?
+
+Every way to recover admin access needs only **shell access** — the cPanel
+*Terminal* (or SSH). No database surgery, and no password prompt (shell access
+already outranks the admin panel).
+
+- **Lost your password**, or no admin account exists any more: create a fresh
+  administrator, sign in, then remove the old one from **Admins** if needed.
+
+  ```
+  php bin/osf admin:create --email=you@example.com --name="Your Name"
+  ```
+
+- **Lost your authenticator** (2FA device gone and recovery codes used up):
+  reset two-factor authentication for your account by its numeric ID (the first
+  admin created is `#1`). This clears the TOTP secret and all recovery codes and
+  marks 2FA unenrolled, so your next sign-in needs only your password and the
+  dashboard prompts you to enrol a new authenticator. Any old recovery codes
+  stop working immediately.
+
+  ```
+  php bin/osf admin:reset-2fa 1
+  ```
+
 ## Setting up email
 
 Open **Email** in the admin nav (`/admin/mail`) to turn a fresh install from
@@ -409,6 +433,49 @@ you can come back to it any time.
 From the command line, `php bin/osf mail:status` prints the current mail
 configuration (never any secret) and runs the same three DNS checks as live
 lookups for the configured From domain.
+
+## Configuration reference
+
+Settings come from three layers, lowest priority first: shipped defaults, then
+`var/config.php` (written by the installer), then environment variables (which
+always win). Most installs never touch these; the security-relevant knobs are:
+
+**Rate limits.** Fixed-window counters. The defaults reproduce the values that
+shipped before they were made configurable, so an untouched install behaves
+exactly as before.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `RATE_IP_PER_MINUTE` | `5` | Public submissions allowed per client IP per minute. |
+| `RATE_FORM_PER_HOUR` | `60` | Public submissions allowed per form per hour. |
+| `RATE_LOGIN_PER_IP` | `10` | Admin password attempts per IP per login window. |
+| `RATE_LOGIN_PER_EMAIL` | `5` | Admin password attempts per email per login window. |
+| `RATE_LOGIN_WINDOW_SECONDS` | `900` | Window (seconds) shared by the login and two-factor limiters. |
+| `RATE_TOTP_PER_ADMIN` | `5` | Second-factor (TOTP/recovery) attempts per admin per window. |
+| `RATE_TOTP_PER_IP` | `10` | Second-factor attempts per IP per window. |
+
+**Trusted proxies.**
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `TRUSTED_PROXIES` | *(empty)* | Comma-separated proxy IPs and/or CIDR ranges. |
+
+By default the client IP is `REMOTE_ADDR` and `X-Forwarded-For` is **ignored**,
+so a client can never spoof its address with a header. If OpenSendForm runs
+behind a reverse proxy or CDN you control, list that proxy's address(es) here
+(plain IPs or CIDR ranges, IPv4 or IPv6). Only when the direct peer is on the
+list is `X-Forwarded-For` consulted, and the client IP is then the *rightmost*
+forwarded entry that is not itself a trusted proxy. This value feeds both the
+rate limiter and the IP stored with each submission.
+
+### TLS / HTTPS
+
+Terminate HTTPS at your host (cPanel's AutoSSL / Let's Encrypt) and serve the
+whole app over TLS. Session cookies are marked `Secure` automatically on HTTPS
+requests. OpenSendForm deliberately does **not** emit an HSTS
+(`Strict-Transport-Security`) header: whether and for how long to force
+HTTPS-only is the host's decision — and a mistake there can make a domain
+unreachable — so enable HSTS at the web-server/host level if you want it.
 
 ## Embedding a form
 

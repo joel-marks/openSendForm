@@ -1,5 +1,33 @@
 # Open questions for the architect
 
+## Hardening sweep (2026-09-16, feature/hardening-sweep)
+
+All tasks were prescriptive and implemented as ruled; no blockers. Two
+decisions are recorded here for transparency, both non-blocking:
+
+1. **TOTP replay counter is shared across login step-up AND sensitive-action
+   re-auth — UX note, non-blocking.** Migration 011 adds a single
+   `admins.totp_last_timestep`, advanced whenever a code is accepted for either
+   purpose. The consequence: an admin who has just completed the login second
+   factor with the current code, and immediately opens *Disable 2FA* / *regenerate
+   recovery codes*, must wait for the authenticator to roll to the next code —
+   re-entering the just-used code is (correctly) refused as a replay. This is the
+   intended security behaviour; flagged only because it is a small, deliberate
+   friction. A separate counter per purpose would remove it at the cost of a
+   weaker guarantee; not done.
+
+2. **`admin:reset-2fa` takes a raw admin ID with no `admin:list` companion —
+   ergonomics note, non-blocking.** Recovering a locked-out admin needs the
+   numeric ID, but there is no CLI command that lists admins (the web Admins page
+   does, which a locked-out operator cannot reach). The README runbook notes the
+   first admin created is `#1`, which covers the common single-admin install.
+   Flag if a `bin/osf admin:list` is wanted; out of scope for this sweep.
+
+3. **Doctrine verification (Task 5) found reality already correct — no change.**
+   The "web never migrates, CLI auto-migrates at boot, installer migrates"
+   doctrine held everywhere; `AutoMigrationDoctrineTest` now locks both
+   directions. No deviation to record.
+
 ## Increment 7
 
 1. **No-JS submissions vs the token stage — SECURITY/SCOPE. RESOLVED

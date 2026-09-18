@@ -36,6 +36,13 @@ final class Routes
 
         $app->get('/health', [self::class, 'health']);
 
+        // Browsers auto-request /favicon.ico; answer with a 204 No Content so it
+        // never reaches the router as an unmatched path and generates 404 noise
+        // in the error log. (We ship no icon; 204 is lighter than serving one.)
+        $app->get('/favicon.ico', function (ServerRequestInterface $req, ResponseInterface $res): ResponseInterface {
+            return $res->withStatus(204);
+        });
+
         // GET / has no page of its own; bounce straight to the sign-in screen.
         // (When the instance isn't installed yet, InstallStateMiddleware
         // redirects to /install before routing ever reaches this handler.)
@@ -238,7 +245,9 @@ final class Routes
         /** @var SubmitPipeline $pipeline */
         $pipeline = $container->get(SubmitPipeline::class);
 
-        $context = new SubmitContext($request, $args['form_key'] ?? null);
+        /** @var \OpenSendForm\Http\ClientIpResolver $ipResolver */
+        $ipResolver = $container->get(\OpenSendForm\Http\ClientIpResolver::class);
+        $context = new SubmitContext($request, $args['form_key'] ?? null, $ipResolver);
         $outcome = $pipeline->run($context);
 
         // Content negotiation: a native (no-JS) browser form POST is a top-level

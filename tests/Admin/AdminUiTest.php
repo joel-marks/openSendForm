@@ -610,6 +610,24 @@ final class AdminUiTest extends TestCase
         self::assertSame('', $token->getHeaderLine('Content-Security-Policy'));
     }
 
+    public function testPublicApiResponsesCarryNosniffButNoFramingHeaders(): void
+    {
+        // The public JSON API carries the app-wide baseline (nosniff) but not
+        // the document-only framing/referrer/cache headers.
+        $health = $this->get('/health');
+        self::assertSame('nosniff', $health->getHeaderLine('X-Content-Type-Options'));
+        self::assertSame('', $health->getHeaderLine('X-Frame-Options'));
+        self::assertSame('', $health->getHeaderLine('Content-Security-Policy'));
+
+        $this->forms->createForm('Contact', 'owner@example.com', ['https://example.com']);
+        $token = $this->app->handle(
+            (new ServerRequestFactory())
+                ->createServerRequest('GET', '/v1/form/x/token', ['REMOTE_ADDR' => '203.0.113.5'])
+        );
+        self::assertSame('nosniff', $token->getHeaderLine('X-Content-Type-Options'));
+        self::assertSame('', $token->getHeaderLine('X-Frame-Options'));
+    }
+
     public function testVendoredAndEnhancementAssetsExist(): void
     {
         $assets = dirname(__DIR__, 2) . '/public/assets';

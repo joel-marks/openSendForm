@@ -218,12 +218,18 @@ final class InstallController
             return self::redirect($response, '/install/finish');
         }
 
-        // Installed now. Mark completion so the done screen (which the state
-        // middleware still allows) renders once, and clear the working state.
+        // Installed now. Destroy the pre-install session in full — its id AND
+        // all its data — so nothing can carry from the browser that ran the
+        // installer into the freshly installed app: not the installer's own
+        // working state (S_DB/S_ADMIN), not a stale admin login or CSRF token
+        // that happened to share this PHP session id (a real risk on shared
+        // cPanel hosting where an unrelated site may have seeded a session
+        // cookie for the same host). A brand-new, empty session then carries
+        // only the one-time completion flag, so the done screen still renders
+        // exactly once for this browser.
         $session = self::session($c);
+        $session->destroy();
         $session->set(self::S_DONE, true);
-        $session->remove(self::S_DB);
-        $session->remove(self::S_ADMIN);
 
         return self::redirect($response, '/install/done');
     }

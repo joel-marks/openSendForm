@@ -208,6 +208,52 @@ final class AuthServiceTest extends TestCase
         self::assertSame(TotpOutcome::Invalid, $service->verifyTotp($batch['plain'][0], self::IP));
     }
 
+    public function testVerifyTotpRejectsAReplayedCodeWithinItsWindow(): void
+    {
+        $admin = $this->makeAdmin(true);
+        $secret = $this->admins->findById($admin['id'])['totp_secret'];
+        $service = $this->service();
+
+        // First login: the code is accepted and its timestep recorded.
+        $service->attemptLogin('boss@example.com', self::PASSWORD, self::IP);
+        $code = $this->totp->codeAt($secret, self::T0);
+        self::assertSame(TotpOutcome::Success, $service->verifyTotp($code, self::IP));
+
+        // A second login attempt in the SAME timestep must refuse the same code
+        // (replay), even though it is still cryptographically current.
+        $service->logout();
+        $service->attemptLogin('boss@example.com', self::PASSWORD, self::IP);
+        self::assertSame(TotpOutcome::Invalid, $service->verifyTotp($code, self::IP));
+        self::assertFalse($this->session->has(AuthService::SESSION_ADMIN_ID));
+
+        // Once the clock crosses into the next period, a fresh code is accepted.
+        $this->clock->advance(30);
+        $next = $this->totp->codeAt($secret, $this->clock->now());
+        self::assertSame(TotpOutcome::Success, $service->verifyTotp($next, self::IP));
+    }
+
+    public function testAcceptTotpCodeIsSingleUsePerTimestep(): void
+    {
+        // Direct unit of the shared acceptance primitive: the same code cannot be
+        // accepted twice, but a later timestep's code can.
+        $admin = $this->makeAdmin(true);
+        $service = $this->service();
+        $reloaded = $this->admins->findById($admin['id']);
+        $secret = $reloaded['totp_secret'];
+
+        $code = $this->totp->codeAt($secret, self::T0);
+        self::assertTrue($service->acceptTotpCode($reloaded, $code));
+
+        // Re-read so the stored timestep is visible, then replay the same code.
+        $reloaded = $this->admins->findById($admin['id']);
+        self::assertFalse($service->acceptTotpCode($reloaded, $code), 'replay must be refused');
+
+        $this->clock->advance(30);
+        $reloaded = $this->admins->findById($admin['id']);
+        $next = $this->totp->codeAt($secret, $this->clock->now());
+        self::assertTrue($service->acceptTotpCode($reloaded, $next));
+    }
+
     public function testVerifyTotpFailsWithoutPendingStep(): void
     {
         $this->makeAdmin(true);

@@ -19,6 +19,7 @@ use OpenSendForm\Auth\Totp;
 use OpenSendForm\Clock\Clock;
 use OpenSendForm\Clock\SystemClock;
 use OpenSendForm\Form\FormRepository;
+use OpenSendForm\Http\ClientIpResolver;
 use OpenSendForm\Install\ConfigWriter;
 use OpenSendForm\Install\InstallerService;
 use OpenSendForm\Install\InstallRoutes;
@@ -120,16 +121,28 @@ final class AppFactory
 
         $app->addRoutingMiddleware();
 
+        // In production, error details are OFF: our ErrorHandler renders plain,
+        // trace-free pages (frozen JSON contract for the API, minimal styled
+        // HTML for browser/admin/installer). In dev the same handler stays
+        // verbose (real message + trace) to aid debugging.
         $displayErrorDetails = $config->appEnv() !== 'production';
-        $app->addErrorMiddleware($displayErrorDetails, true, true);
+        $errorMiddleware = $app->addErrorMiddleware($displayErrorDetails, true, true);
+        $errorMiddleware->setDefaultErrorHandler(
+            new \OpenSendForm\Http\ErrorHandler($app->getResponseFactory())
+        );
 
         Routes::register($app);
         AdminRoutes::register($app);
         InstallRoutes::register($app);
 
-        // Outermost middleware: decide reachability from the installed state
-        // before any route runs.
+        // Decide reachability from the installed state before any route runs.
         $app->add(new InstallStateMiddleware($installPaths, $gateInstall));
+
+        // Outermost: the app-wide security baseline (X-Content-Type-Options:
+        // nosniff on every response, including install redirects/404s and the
+        // public JSON API). The admin/installer groups add the fuller document
+        // header set on top via SecurityHeadersMiddleware.
+        $app->add(new \OpenSendForm\Http\BaselineHeadersMiddleware());
 
         return $app;
     }
@@ -151,6 +164,11 @@ final class AppFactory
         $container->set(Database::class, $db);
         $container->set(DnsChecker::class, $dns);
         $container->set(Clock::class, $clock);
+        // Client-IP policy: REMOTE_ADDR by default; X-Forwarded-For only when a
+        // trusted-proxy list is configured. Shared by the submit pipeline and
+        // the admin login limiter so a logged/rate-limited IP is derived once,
+        // the same way, everywhere.
+        $container->set(ClientIpResolver::class, new ClientIpResolver($config->trustedProxies()));
 
         $forms = new FormRepository($db);
         $submissions = new SubmissionRepository($db);
@@ -211,7 +229,24 @@ final class AppFactory
         $container->set(Flash::class, new Flash($session));
         $container->set(
             AuthService::class,
-            new AuthService($adminRepo, $hasher, $totp, $session, $limiter, $clock)
+            new AuthService(
+                $adminRepo,
+                $hasher,
+                $totp,
+                $session,
+                $limiter,
+                $clock,
+                $config->rateLoginPerIp(),
+                $config->rateLoginPerEmail(),
+                $config->rateLoginWindowSeconds(),
+                // Session idle/absolute lifetimes are timeouts, not rate limits;
+                // keep the constructor defaults (30 min / 12 h).
+                1800,
+                43200,
+                null,
+                $config->rateTotpPerAdmin(),
+                $config->rateTotpPerIp()
+            )
         );
         $container->set(
             TemplateRenderer::class,

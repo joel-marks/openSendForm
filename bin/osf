@@ -87,6 +87,8 @@ try {
             exit(cmdAdminCreate($db, $args));
         case 'admin:delete':
             exit(cmdAdminDelete($db, $args));
+        case 'admin:reset-2fa':
+            exit(cmdAdminResetTotp($db, $args));
         case 'mail:retry':
             exit(cmdMailRetry($db, $config));
         case 'mail:test':
@@ -409,6 +411,46 @@ function cmdAdminDelete(Database $db, array $args): int
     $repo->deleteAdmin((int) $id);
 
     fwrite(STDOUT, "Deleted admin #{$id} <{$target['email']}> ({$target['display_name']}).\n");
+
+    return 0;
+}
+
+/**
+ * admin:reset-2fa ID
+ *
+ * Clears an administrator's TOTP secret AND recovery codes and marks 2FA
+ * unenrolled, so the admin's next sign-in needs only their password and the
+ * dashboard prompts them to enrol a fresh authenticator through the normal
+ * enrolment flow. The recovery-code protection is the point: an operator
+ * recovers a locked-out admin (lost authenticator) without ever seeing or
+ * resetting the password. Any codes shown before the reset stop working.
+ *
+ * Refuses an unknown ID with a nonzero exit. Like admin:create/admin:delete
+ * there is NO password prompt: shell access to run `bin/osf` is already a
+ * higher privilege than the admin panel, so re-proving a web password here
+ * would add no real protection.
+ */
+function cmdAdminResetTotp(Database $db, array $args): int
+{
+    $id = $args[0] ?? null;
+    if ($id === null || !ctype_digit($id)) {
+        fwrite(STDERR, "admin:reset-2fa requires a numeric admin ID\n\n" . usage());
+        return 1;
+    }
+
+    $hasher = new PasswordHasher();
+    $repo = new AdminRepository($db, $hasher, new RecoveryCodes($hasher));
+
+    $target = $repo->findById((int) $id);
+    if ($target === null) {
+        fwrite(STDERR, "No admin found with ID {$id}\n");
+        return 1;
+    }
+
+    $repo->disableTotp((int) $id);
+
+    fwrite(STDOUT, "Reset two-factor authentication for admin #{$id} <{$target['email']}> ({$target['display_name']}).\n");
+    fwrite(STDOUT, "They can sign in with just their password and will be prompted to set up 2FA again.\n");
 
     return 0;
 }
@@ -903,6 +945,7 @@ function usage(): string
       bin/osf form:delete ID
       bin/osf admin:create --email=EMAIL --name=NAME
       bin/osf admin:delete ID
+      bin/osf admin:reset-2fa ID
       bin/osf mail:retry
       bin/osf mail:test --to=ADDRESS
       bin/osf mail:status
@@ -927,6 +970,14 @@ function usage(): string
       admin:delete permanently removes an admin; refuses the last active
         admin. No password prompt — shell access is already the higher
         privilege.
+      admin:reset-2fa clears an admin's TOTP secret and recovery codes and
+        marks 2FA unenrolled, so their next login needs only the password and
+        the dashboard prompts a fresh enrolment. Any old recovery codes stop
+        working. Refuses an unknown ID. No password prompt — shell access is
+        already the higher privilege. This and admin:create are the two ways
+        to recover a locked-out install from the cPanel Terminal (see the
+        README "Locked out?" runbook): admin:create for a lost password,
+        admin:reset-2fa for a lost authenticator.
       mail:retry re-sends submissions whose delivery is due: failed
         submissions whose backoff has elapsed, plus never-attempted
         'received' submissions accepted while mail was disabled or SMTP was

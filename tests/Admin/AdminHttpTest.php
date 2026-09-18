@@ -75,9 +75,11 @@ final class AdminHttpTest extends TestCase
     {
         $response = $this->get('/admin/login');
 
+        // The full document header set, locked here.
+        self::assertStringContainsString("frame-ancestors 'none'", $response->getHeaderLine('Content-Security-Policy'));
         self::assertSame('DENY', $response->getHeaderLine('X-Frame-Options'));
         self::assertSame('nosniff', $response->getHeaderLine('X-Content-Type-Options'));
-        self::assertSame('no-referrer', $response->getHeaderLine('Referrer-Policy'));
+        self::assertSame('strict-origin-when-cross-origin', $response->getHeaderLine('Referrer-Policy'));
         self::assertSame('no-store', $response->getHeaderLine('Cache-Control'));
     }
 
@@ -146,6 +148,43 @@ final class AdminHttpTest extends TestCase
         self::assertSame('/admin', $verify->getHeaderLine('Location'));
 
         self::assertSame(200, $this->get('/admin')->getStatusCode());
+    }
+
+    public function testLoginPerIpRateLimitIsConfigDriven(): void
+    {
+        // A dedicated app whose per-IP login cap is overridden low (2), proving
+        // the RATE_LOGIN_PER_IP knob takes effect end to end: the default is 10.
+        $db = Database::connect('sqlite::memory:');
+        (new MigrationRunner($db, dirname(__DIR__, 2) . '/migrations'))->migrate();
+        $hasher = new PasswordHasher(PASSWORD_BCRYPT);
+        (new AdminRepository($db, $hasher, new RecoveryCodes($hasher)))
+            ->createAdmin('boss@example.com', 'The Boss', self::PASSWORD);
+
+        $config = Config::fromValues([
+            'APP_ENV'           => 'dev',
+            'APP_SECRET'        => 'rate-config-secret',
+            'RATE_LOGIN_PER_IP' => '2',
+        ]);
+        $session = new FakeSession();
+        $app = AppFactory::create($config, $db, null, $this->clock, null, null, $session);
+
+        $attempt = static function (App $app, string $csrf): ResponseInterface {
+            return $app->handle(
+                (new ServerRequestFactory())
+                    ->createServerRequest('POST', '/admin/login', ['REMOTE_ADDR' => '203.0.113.5'])
+                    ->withParsedBody(['_csrf' => $csrf, 'email' => 'boss@example.com', 'password' => 'wrong'])
+            );
+        };
+
+        $csrf = $this->csrfFrom($app->handle(
+            (new ServerRequestFactory())->createServerRequest('GET', '/admin/login', ['REMOTE_ADDR' => '203.0.113.5'])
+        ));
+
+        // Two attempts are allowed (401), the third is rate-limited (429) — far
+        // below the default cap of 10.
+        self::assertSame(401, $attempt($app, $csrf)->getStatusCode());
+        self::assertSame(401, $attempt($app, $csrf)->getStatusCode());
+        self::assertSame(429, $attempt($app, $csrf)->getStatusCode());
     }
 
     public function testTotpRateLimitedReturns429(): void

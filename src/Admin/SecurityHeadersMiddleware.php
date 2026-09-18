@@ -12,9 +12,11 @@ use Psr\Http\Server\RequestHandlerInterface;
 /**
  * Applies hardening headers to every admin response.
  *
- * DENY framing, block MIME sniffing, leak no referrer, and never cache admin
- * pages (they are authenticated and may contain one-time secrets such as
- * freshly generated recovery codes).
+ * DENY framing, block MIME sniffing, send a trimmed referrer
+ * (strict-origin-when-cross-origin: full URL same-origin, bare origin
+ * cross-origin, nothing on downgrade), and never cache admin pages (they are
+ * authenticated and may contain one-time secrets such as freshly generated
+ * recovery codes).
  *
  * A strict Content-Security-Policy locks every source to our own origin
  * (with data: images for QR/inline assets). All admin CSS and JS are
@@ -37,7 +39,7 @@ final class SecurityHeadersMiddleware implements MiddlewareInterface
             ->withHeader('Content-Security-Policy', self::CSP)
             ->withHeader('X-Frame-Options', 'DENY')
             ->withHeader('X-Content-Type-Options', 'nosniff')
-            ->withHeader('Referrer-Policy', 'no-referrer')
+            ->withHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
             ->withHeader('Cache-Control', 'no-store');
     }
 }

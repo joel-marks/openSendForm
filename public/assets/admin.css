@@ -925,3 +925,27 @@ section > h1:first-child { margin-top: 0; }
     background: var(--osf-danger-subtle);
     border-left: 3px solid var(--osf-danger);
 }
+
+/* Error pages (src/Http/ErrorHandler.php): a minimal heading + message centred
+   in the layout, plus a dev-only detail block. Design-system tokens only. */
+.osf-error {
+    max-width: 42rem;
+    margin: var(--osf-space-6) auto;
+}
+
+.osf-error h1 {
+    margin-bottom: var(--osf-space-3);
+}
+
+.osf-error-detail {
+    margin-top: var(--osf-space-5);
+    padding: var(--osf-space-4);
+    background: var(--osf-bg-inset);
+    border: 1px solid var(--osf-border);
+    border-radius: var(--osf-radius);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: var(--osf-font-mono);
+    font-size: 0.85rem;
+}

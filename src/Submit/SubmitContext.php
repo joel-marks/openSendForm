@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OpenSendForm\Submit;
 
+use OpenSendForm\Http\ClientIpResolver;
 use Psr\Http\Message\ServerRequestInterface;
 
 /**
@@ -99,15 +100,24 @@ final class SubmitContext
      */
     public bool $prefersHtml = false;
 
-    public function __construct(ServerRequestInterface $request, ?string $formKey = null)
-    {
+    public function __construct(
+        ServerRequestInterface $request,
+        ?string $formKey = null,
+        ?ClientIpResolver $ipResolver = null
+    ) {
         $this->request = $request;
         $this->formKey = $formKey === '' ? null : $formKey;
 
         $server = $request->getServerParams();
-        // REMOTE_ADDR only. Trusting X-Forwarded-For behind a proxy is a
-        // deliberate future config concern, not a default.
-        $this->remoteIp = (string) ($server['REMOTE_ADDR'] ?? '');
+        // Client IP defaults to REMOTE_ADDR; X-Forwarded-For is honoured only
+        // when a trusted-proxy policy is configured (TRUSTED_PROXIES) and this
+        // request's direct peer is on the trusted list — see ClientIpResolver.
+        $ipResolver ??= ClientIpResolver::none();
+        $forwardedFor = $request->getHeaderLine('X-Forwarded-For');
+        $this->remoteIp = $ipResolver->resolve(
+            (string) ($server['REMOTE_ADDR'] ?? ''),
+            $forwardedFor === '' ? null : $forwardedFor
+        );
 
         $ua = $request->getHeaderLine('User-Agent');
         $this->userAgent = $ua === '' ? null : $ua;

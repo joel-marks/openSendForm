@@ -2019,3 +2019,68 @@ all-active form set.
   name), while the alert emails carry it in the subject.
 - Out of scope (untouched): webhooks/external ping services, admin UI for
   monitor config, embed/tokens.css, the frozen JSON contract, the stage order.
+
+## 2026-09-16 — Hardening sweep (feature/hardening-sweep)
+- Branch: feature/hardening-sweep (off latest main). Final pre-deployment
+  defence-in-depth pass; production instance will share a cPanel unix user with
+  unrelated client WordPress sites. No new Composer deps (none authorised).
+- **T1 Installer session destruction.** `InstallController::finish()` now calls
+  `$session->destroy()` before setting the one-time done flag, so a pre-install
+  session (id + data) — a stray admin login, CSRF token, or installer working
+  state — can never cross into the installed app. Verified real NativeSession
+  destroy→write starts a fresh session (session_status NONE after destroy).
+  Test: InstallerHttpTest::testCommitDestroysAnyPreInstallSession.
+- **T2 `bin/osf admin:reset-2fa ID`.** Clears TOTP secret + recovery codes and
+  unenrols 2FA via `AdminRepository::disableTotp` (no password prompt, refuses
+  unknown ID); usage + notes updated, cross-referenced with the lockout runbook.
+  Tests in CliAdminTest incl. old recovery codes stop working after reset.
+- **T3 Production error pages + favicon.** New `src/Http/ErrorHandler.php`
+  registered via `ErrorMiddleware::setDefaultErrorHandler`. 404/500 in production
+  render with NO trace/class/path: frozen JSON contract for `/v1` + non-HTML,
+  minimal design-system HTML (tokens.css + admin.css, new `.osf-error` block) for
+  browser/admin/installer; dev stays verbose. `/favicon.ico` → 204. Tests:
+  ErrorPageTest (unit + through-the-app 404/500 for JSON/admin/installer, dev
+  verbose, favicon) asserting no `Slim\`, `Trace`, `.php`, class/path markers leak.
+- **T4 TOTP replay prevention.** Migration 011 adds `admins.totp_last_timestep`.
+  `Totp::matchedCounter()` returns the matched timestep; `AuthService::acceptTotpCode`
+  is the single acceptance point (login step-up + AdminController re-auth +
+  enrolment all route through it / record the timestep) and accepts only a
+  strictly-later timestep, then advances the shared per-admin marker. `disableTotp`
+  clears the marker. Tests: AuthServiceTest (replay refused, single-use per
+  timestep), AccountAdminsHttpTest (disable refuses the just-used login code).
+  Existing TOTP HTTP tests updated to advance the FixedClock a period between
+  login and re-auth (reusing a code is now correctly refused).
+- **T5 No-auto-migration doctrine verified + locked.** Reality already matched
+  ("web never migrates → banner; CLI auto-migrates at boot; installer migrates").
+  New AutoMigrationDoctrineTest proves a stale DB (v10) still serves the dashboard
+  with the banner and unchanged schema on web requests, and that a plain CLI
+  command auto-migrates the DB to current at boot. No code change needed.
+- **T6 Rate-limit tuning config-driven.** Submit limits already `RATE_*`; added
+  `RATE_LOGIN_PER_IP/PER_EMAIL/WINDOW_SECONDS`, `RATE_TOTP_PER_ADMIN/PER_IP`
+  (defaults reproduce the previously hard-coded AuthService values, clamped ≥1),
+  wired in AppFactory. Documented in README Configuration reference. Tests:
+  ConfigTest (defaults/overrides/clamp), AdminHttpTest (per-IP override takes
+  effect end to end).
+- **T7 Security headers audit.** Referrer-Policy changed no-referrer →
+  strict-origin-when-cross-origin on admin/installer; new app-wide
+  `BaselineHeadersMiddleware` adds X-Content-Type-Options nosniff to EVERY
+  response (public JSON API included, which stays CSP/framing-free). Full set
+  locked in AdminHttpTest + InstallerHttpTest; public nosniff-only in AdminUiTest.
+  No HSTS (README TLS note explains why).
+- **T8 Trusted-proxy ruling.** New `src/Http/ClientIpResolver.php` + `TRUSTED_PROXIES`
+  (CSV IPs/CIDRs, IPv4+IPv6, default empty). Client IP = REMOTE_ADDR, XFF ignored
+  unless the direct peer is trusted, then the rightmost non-trusted XFF entry wins.
+  Wired into SubmitContext (feeds rate limiter + stored remote_ip) and
+  AdminController login/2FA IPs. Tests: ClientIpResolverTest (default ignores XFF,
+  opted-in derives, spoof-from-untrusted never wins, CIDR/IPv6/port parsing),
+  SubmitEndpointTest (stored IP + rate-limit keying behind a trusted proxy).
+- **T9 Runbook + docs.** README gains a "Locked out?" runbook (admin:create /
+  admin:reset-2fa from the cPanel Terminal, shell-only) and a "Configuration
+  reference" section documenting every RATE_* var, TRUSTED_PROXIES, and the
+  TLS/no-HSTS deployment note.
+- Migration count 10 → 11; version/schema tests updated. DashboardStaleSchemaTest
+  fixture bumped to migrate to v10 (011 the pending one).
+- Test results: **OK — 589 tests, 3659 assertions, all green** (up from 548).
+- Deviations from prompt: none. No unauthorised Composer deps. QUESTIONS.md:
+  three non-blocking notes appended (shared TOTP replay counter UX; no admin:list
+  companion for reset-2fa; doctrine already matched reality).

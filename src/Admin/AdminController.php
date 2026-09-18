@@ -81,7 +81,7 @@ final class AdminController
 
         $email = (string) ($data['email'] ?? '');
         $password = (string) ($data['password'] ?? '');
-        $ip = self::remoteIp($request);
+        $ip = self::remoteIp($c, $request);
 
         $outcome = self::auth($c)->attemptLogin($email, $password, $ip);
 
@@ -158,7 +158,7 @@ final class AdminController
             ], 400);
         }
 
-        $outcome = $auth->verifyTotp((string) ($data['code'] ?? ''), self::remoteIp($request));
+        $outcome = $auth->verifyTotp((string) ($data['code'] ?? ''), self::remoteIp($c, $request));
 
         switch ($outcome) {
             case TotpOutcome::Success:
@@ -372,7 +372,8 @@ final class AdminController
         }
 
         $totp = self::totpService($c);
-        if (!$totp->verify($secret, (string) ($data['code'] ?? ''), self::clockNow($c))) {
+        $matched = $totp->matchedCounter($secret, (string) ($data['code'] ?? ''), self::clockNow($c));
+        if ($matched === null) {
             return self::renderTotpSetup($c, $response, self::enrolmentVars(
                 $c,
                 $admin,
@@ -384,6 +385,10 @@ final class AdminController
         $admins = self::admins($c);
         $admins->setTotp($admin['id'], $secret);
         $admins->enableTotp($admin['id']);
+        // Seed the replay marker with the enrolment code's timestep, so that
+        // same code cannot be immediately reused for a login step-up or a
+        // sensitive-action re-auth while it is still valid.
+        $admins->recordTotpTimestep($admin['id'], $matched);
         $session->remove(self::SESSION_SETUP_SECRET);
 
         return self::issueRecoveryCodes($c, $response, $admin['id']);
@@ -416,8 +421,7 @@ final class AdminController
             ], 400);
         }
 
-        $totp = self::totpService($c);
-        if (!$totp->verify($admin['totp_secret'], (string) ($data['code'] ?? ''), self::clockNow($c))) {
+        if (!self::auth($c)->acceptTotpCode($admin, (string) ($data['code'] ?? ''))) {
             return self::renderTotpSetup($c, $response, [
                 'title'   => 'Two-factor authentication',
                 'enabled' => true,
@@ -470,8 +474,7 @@ final class AdminController
             ], 401);
         }
 
-        $totp = self::totpService($c);
-        if (!$totp->verify($admin['totp_secret'], (string) ($data['code'] ?? ''), self::clockNow($c))) {
+        if (!self::auth($c)->acceptTotpCode($admin, (string) ($data['code'] ?? ''))) {
             return self::renderTotpSetup($c, $response, [
                 'title'        => 'Two-factor authentication',
                 'enabled'      => true,
@@ -615,9 +618,16 @@ final class AdminController
         return $data;
     }
 
-    private static function remoteIp(ServerRequestInterface $request): string
+    private static function remoteIp(ContainerInterface $c, ServerRequestInterface $request): string
     {
-        return (string) ($request->getServerParams()['REMOTE_ADDR'] ?? '');
+        /** @var \OpenSendForm\Http\ClientIpResolver $resolver */
+        $resolver = $c->get(\OpenSendForm\Http\ClientIpResolver::class);
+        $forwardedFor = $request->getHeaderLine('X-Forwarded-For');
+
+        return $resolver->resolve(
+            (string) ($request->getServerParams()['REMOTE_ADDR'] ?? ''),
+            $forwardedFor === '' ? null : $forwardedFor
+        );
     }
 
     private static function auth(ContainerInterface $c): AuthService

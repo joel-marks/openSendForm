@@ -403,6 +403,82 @@ final class SubmitEndpointTest extends TestCase
         self::assertSame(0, $this->submissionCount());
     }
 
+    // --- Trusted-proxy client IP -----------------------------------------
+
+    public function testDefaultStoresRemoteAddrAndIgnoresForwardedFor(): void
+    {
+        $token = $this->freshToken();
+        $this->clock->advance(3);
+
+        $request = $this->submitRequest(
+            [SubmitContext::FIELD_TOKEN => $token, 'name' => 'Ada'],
+            ['remote_ip' => '203.0.113.7']
+        )->withHeader('X-Forwarded-For', '10.9.9.9');
+
+        // No TRUSTED_PROXIES configured: the forwarded header is ignored.
+        self::assertSame(200, $this->handle($request)->getStatusCode());
+        self::assertSame('203.0.113.7', $this->lastSubmission()['remote_ip']);
+    }
+
+    public function testTrustedProxyDerivesClientIpForStoredSubmission(): void
+    {
+        $token = $this->freshToken();
+        $this->clock->advance(3);
+
+        $request = $this->submitRequest(
+            [SubmitContext::FIELD_TOKEN => $token, 'name' => 'Ada'],
+            ['remote_ip' => '192.0.2.10'] // the trusted proxy
+        )->withHeader('X-Forwarded-For', '203.0.113.77');
+
+        $response = $this->handle($request, ['TRUSTED_PROXIES' => '192.0.2.10']);
+
+        self::assertSame(200, $response->getStatusCode());
+        // The logged IP is the real client, derived from X-Forwarded-For.
+        self::assertSame('203.0.113.77', $this->lastSubmission()['remote_ip']);
+    }
+
+    public function testSpoofedForwardedForFromUntrustedPeerNeverWins(): void
+    {
+        $token = $this->freshToken();
+        $this->clock->advance(3);
+
+        // The direct peer (203.0.113.7) is NOT the trusted proxy, so its
+        // attacker-supplied X-Forwarded-For is ignored outright.
+        $request = $this->submitRequest(
+            [SubmitContext::FIELD_TOKEN => $token, 'name' => 'Ada'],
+            ['remote_ip' => '203.0.113.7']
+        )->withHeader('X-Forwarded-For', '10.9.9.9');
+
+        $response = $this->handle($request, ['TRUSTED_PROXIES' => '192.0.2.10']);
+
+        self::assertSame(200, $response->getStatusCode());
+        self::assertSame('203.0.113.7', $this->lastSubmission()['remote_ip']);
+    }
+
+    public function testRateLimitKeysOnDerivedClientIpBehindTrustedProxy(): void
+    {
+        // Two distinct clients behind the same trusted proxy get independent
+        // per-IP buckets; the proxy address is never the rate-limit key. The
+        // rate-limit stage runs before the token stage, so no token is needed —
+        // an under-limit request returns the frozen fake-success, an over-limit
+        // one returns rate_limited.
+        $env = ['TRUSTED_PROXIES' => '192.0.2.10', 'RATE_IP_PER_MINUTE' => '1'];
+
+        $req = function (string $client): ServerRequestInterface {
+            return $this->submitRequest(['name' => 'x'], ['remote_ip' => '192.0.2.10'])
+                ->withHeader('X-Forwarded-For', $client);
+        };
+
+        // First client, first hit — allowed (its bucket now holds 1).
+        self::assertNotSame(429, $this->handle($req('203.0.113.1'), $env)->getStatusCode());
+        // A DIFFERENT client behind the same proxy — its own bucket, allowed.
+        self::assertNotSame(429, $this->handle($req('203.0.113.2'), $env)->getStatusCode());
+        // The FIRST client again — its bucket is full (limit 1), so blocked.
+        $blocked = $this->handle($req('203.0.113.1'), $env);
+        self::assertSame(429, $blocked->getStatusCode());
+        self::assertSame('rate_limited', $this->json($blocked)['error']['code']);
+    }
+
     // --- Token endpoint ---------------------------------------------------
 
     public function testTokenEndpointIssuesTokenForAllowedOrigin(): void

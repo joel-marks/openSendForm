@@ -548,7 +548,7 @@ final class AccountAdminsHttpTest extends TestCase
         $response = $this->post('/admin/totp/disable', [
             '_csrf'            => $csrf,
             'current_password' => 'wrong-password',
-            'code'             => $this->totp->codeAt($secret, self::T0),
+            'code'             => $this->totp->codeAt($secret, $this->clock->now()),
         ]);
 
         self::assertSame(401, $response->getStatusCode());
@@ -578,7 +578,7 @@ final class AccountAdminsHttpTest extends TestCase
         $response = $this->post('/admin/totp/disable', [
             '_csrf'            => $csrf,
             'current_password' => self::PASSWORD,
-            'code'             => $this->totp->codeAt($secret, self::T0),
+            'code'             => $this->totp->codeAt($secret, $this->clock->now()),
         ]);
 
         self::assertSame(302, $response->getStatusCode());
@@ -594,6 +594,26 @@ final class AccountAdminsHttpTest extends TestCase
             'Two-factor authentication is not enabled',
             (string) $this->get('/admin')->getBody()
         );
+    }
+
+    public function testDisableTotpRefusesTheAlreadyUsedLoginCode(): void
+    {
+        [$admin, $secret] = $this->loginWithTotp();
+
+        // loginWithTotp consumed the code at T0 (recording its timestep) and
+        // advanced the clock one period. That same login code is still inside
+        // its +/- skew window, but re-using it for a sensitive action is a
+        // replay across the shared per-admin counter, so it must be refused —
+        // even with the correct password.
+        $csrf = $this->csrfFrom($this->get('/admin/totp/setup'));
+        $response = $this->post('/admin/totp/disable', [
+            '_csrf'            => $csrf,
+            'current_password' => self::PASSWORD,
+            'code'             => $this->totp->codeAt($secret, self::T0),
+        ]);
+
+        self::assertSame(401, $response->getStatusCode());
+        self::assertSame(1, $this->admins->findById($admin['id'])['totp_enabled'], 'still enabled — replay refused');
     }
 
     // --- Recovery-screen copy --------------------------------------------
@@ -615,7 +635,7 @@ final class AccountAdminsHttpTest extends TestCase
         $csrf = $this->csrfFrom($this->get('/admin/totp/setup'));
         $response = $this->post('/admin/totp/recovery-codes/regenerate', [
             '_csrf' => $csrf,
-            'code'  => $this->totp->codeAt($secret, self::T0),
+            'code'  => $this->totp->codeAt($secret, $this->clock->now()),
         ]);
 
         $body = (string) $response->getBody();
@@ -643,7 +663,7 @@ final class AccountAdminsHttpTest extends TestCase
             (string) $this->get('/admin/totp')->getBody(),
             'totp (pending login)'
         );
-        $this->post('/admin/totp', ['_csrf' => $this->csrfFrom($this->get('/admin/totp')), 'code' => $this->totp->codeAt($secret, self::T0)]);
+        $this->post('/admin/totp', ['_csrf' => $this->csrfFrom($this->get('/admin/totp')), 'code' => $this->totp->codeAt($secret, $this->clock->now())]);
 
         // TOTP setup, "enabled" branch (regenerate + disable forms).
         AdminUiFieldWrapperAssertions::assertNoOrphanControls(
@@ -651,10 +671,14 @@ final class AccountAdminsHttpTest extends TestCase
             'totp setup (enabled)'
         );
 
+        // Advance a TOTP period so the regenerate re-auth uses a fresh code —
+        // the login code just consumed can no longer be replayed.
+        $this->clock->advance(30);
+
         // Recovery codes display screen (regenerate response body).
         $regenerate = $this->post('/admin/totp/recovery-codes/regenerate', [
             '_csrf' => $this->csrfFrom($this->get('/admin/totp/setup')),
-            'code'  => $this->totp->codeAt($secret, self::T0),
+            'code'  => $this->totp->codeAt($secret, $this->clock->now()),
         ]);
         AdminUiFieldWrapperAssertions::assertNoOrphanControls(
             (string) $regenerate->getBody(),
@@ -724,8 +748,14 @@ final class AccountAdminsHttpTest extends TestCase
         $totpPage = $this->get('/admin/totp');
         $this->post('/admin/totp', [
             '_csrf' => $this->csrfFrom($totpPage),
-            'code'  => $this->totp->codeAt($secret, self::T0),
+            'code'  => $this->totp->codeAt($secret, $this->clock->now()),
         ]);
+
+        // Replay protection records the timestep just consumed at login. Advance
+        // one TOTP period so a later sensitive-action re-auth uses a fresh code,
+        // exactly as a real admin would 30s on — reusing the login code is now
+        // refused. Well within the idle timeout, so the session stays valid.
+        $this->clock->advance(30);
 
         return [$admin, $secret];
     }

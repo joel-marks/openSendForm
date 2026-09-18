@@ -196,7 +196,7 @@ final class AuthService
             return TotpOutcome::Invalid;
         }
 
-        if ($this->totp->verify($admin['totp_secret'], $code, $this->clock->now())) {
+        if ($this->acceptTotpCode($admin, $code)) {
             $this->completeLogin($id);
 
             return TotpOutcome::Success;
@@ -210,6 +210,44 @@ final class AuthService
         }
 
         return TotpOutcome::Invalid;
+    }
+
+    /**
+     * Replay-aware TOTP acceptance for an already-identified admin.
+     *
+     * Returns true only when the code matches a timestep STRICTLY LATER than the
+     * last one accepted for this admin (across the login second factor and every
+     * sensitive-action re-auth alike), then records that timestep so the same
+     * code — or any earlier one still inside its +/- skew window — can never be
+     * accepted a second time within its validity window. The single place TOTP
+     * codes are accepted, so replay protection is uniform: the login step-up
+     * calls it here, and AdminController's re-auth paths call it directly.
+     *
+     * @param array<string, mixed> $admin A hydrated admin row with a non-null
+     *                                     totp_secret and totp_last_timestep.
+     */
+    public function acceptTotpCode(array $admin, string $code): bool
+    {
+        $secret = (string) ($admin['totp_secret'] ?? '');
+        if ($secret === '') {
+            return false;
+        }
+
+        $matched = $this->totp->matchedCounter($secret, $code, $this->clock->now());
+        if ($matched === null) {
+            return false;
+        }
+
+        $last = $admin['totp_last_timestep'] ?? null;
+        if ($last !== null && $matched <= (int) $last) {
+            // A code from this timestep (or an earlier one still in-window) has
+            // already been accepted — refuse the replay.
+            return false;
+        }
+
+        $this->admins->recordTotpTimestep((int) $admin['id'], $matched);
+
+        return true;
     }
 
     /**

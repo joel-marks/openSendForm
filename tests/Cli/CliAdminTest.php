@@ -146,6 +146,71 @@ final class CliAdminTest extends TestCase
         self::assertStringContainsString('requires a numeric admin ID', $result['stderr']);
     }
 
+    // --- admin:reset-2fa ----------------------------------------------
+
+    public function testResetTotpUnenrolsAndClearsRecoveryCodes(): void
+    {
+        $repo = $this->repo();
+        $admin = $repo->createAdmin('boss@example.com', 'Boss', 'a-strong-password');
+
+        // Enrol: a stored secret, enabled enforcement, and a batch of recovery
+        // codes we can prove work before the reset.
+        $repo->setTotp($admin['id'], 'JBSWY3DPEHPK3PXP');
+        $repo->enableTotp($admin['id']);
+        $batch = (new RecoveryCodes(new PasswordHasher()))->generate();
+        $repo->setRecoveryCodes($admin['id'], $batch['hashes']);
+        $aCode = $batch['plain'][0];
+
+        $result = $this->osf(['admin:reset-2fa', (string) $admin['id']], '');
+
+        self::assertSame(0, $result['code'], $result['stderr']);
+        self::assertStringContainsString('Reset two-factor authentication for admin #' . $admin['id'], $result['stdout']);
+        self::assertStringContainsString('boss@example.com', $result['stdout']);
+
+        // Re-read: 2FA is unenrolled and both secret and codes are cleared.
+        $after = $this->repo()->findById($admin['id']);
+        self::assertNotNull($after);
+        self::assertSame(0, $after['totp_enabled']);
+        self::assertNull($after['totp_secret']);
+        self::assertNull($after['recovery_codes']);
+    }
+
+    public function testResetTotpMakesOldRecoveryCodesStopWorking(): void
+    {
+        $repo = $this->repo();
+        $admin = $repo->createAdmin('boss@example.com', 'Boss', 'a-strong-password');
+        $repo->setTotp($admin['id'], 'JBSWY3DPEHPK3PXP');
+        $repo->enableTotp($admin['id']);
+        $batch = (new RecoveryCodes(new PasswordHasher()))->generate();
+        $repo->setRecoveryCodes($admin['id'], $batch['hashes']);
+        $aCode = $batch['plain'][1];
+
+        // The code works before the reset (sanity check on the fixture).
+        self::assertTrue($this->repo()->consumeRecoveryCode($admin['id'], $batch['plain'][0]));
+
+        $result = $this->osf(['admin:reset-2fa', (string) $admin['id']], '');
+        self::assertSame(0, $result['code'], $result['stderr']);
+
+        // A previously valid, still-unused code no longer works after the reset.
+        self::assertFalse($this->repo()->consumeRecoveryCode($admin['id'], $aCode));
+    }
+
+    public function testResetTotpRefusesUnknownId(): void
+    {
+        $result = $this->osf(['admin:reset-2fa', '999'], '');
+
+        self::assertSame(1, $result['code']);
+        self::assertStringContainsString('No admin found', $result['stderr']);
+    }
+
+    public function testResetTotpRefusesNonNumericId(): void
+    {
+        $result = $this->osf(['admin:reset-2fa', 'nope'], '');
+
+        self::assertSame(1, $result['code']);
+        self::assertStringContainsString('requires a numeric admin ID', $result['stderr']);
+    }
+
     private function repo(): AdminRepository
     {
         $hasher = new PasswordHasher();

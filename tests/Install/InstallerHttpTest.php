@@ -145,6 +145,50 @@ final class InstallerHttpTest extends TestCase
         self::assertSame('/admin', $login->getHeaderLine('Location'));
     }
 
+    public function testCommitDestroysAnyPreInstallSession(): void
+    {
+        // Drive the wizard up to the review screen.
+        $dbPage = $this->get('/install/database');
+        $this->post('/install/database', [
+            '_csrf'     => $this->csrfFrom($dbPage),
+            'db_driver' => 'sqlite',
+        ]);
+        $adminPage = $this->get('/install/admin');
+        $this->post('/install/admin', [
+            '_csrf'            => $this->csrfFrom($adminPage),
+            'name'             => 'The Boss',
+            'email'            => self::ADMIN_EMAIL,
+            'password'         => self::ADMIN_PASSWORD,
+            'password_confirm' => self::ADMIN_PASSWORD,
+        ]);
+        $finishPage = $this->get('/install/finish');
+
+        // Seed state that existed in the browser's session BEFORE the app was
+        // installed — a stray admin login and an arbitrary key that must not
+        // survive into the installed app.
+        $this->session->set('auth.admin_id', 999);
+        $this->session->set('pre_install_marker', 'leftover');
+        $destroysBefore = $this->session->destroyCount();
+
+        $finishSubmit = $this->post('/install/finish', ['_csrf' => $this->csrfFrom($finishPage)]);
+        self::assertSame(302, $finishSubmit->getStatusCode());
+        self::assertSame('/install/done', $finishSubmit->getHeaderLine('Location'));
+
+        // The whole session was destroyed on commit: id + data. Nothing from
+        // before the install remains, and the installer's own working state is
+        // gone too — only the one-time done flag lives in the fresh session.
+        self::assertSame($destroysBefore + 1, $this->session->destroyCount(), 'commit must destroy the session');
+        self::assertFalse($this->session->has('auth.admin_id'), 'a pre-install login must not carry over');
+        self::assertFalse($this->session->has('pre_install_marker'), 'no pre-install data may carry over');
+        self::assertNull($this->session->get('install.db'), 'installer working state cleared');
+        self::assertNull($this->session->get('install.admin_created'), 'installer working state cleared');
+
+        // The done screen still renders exactly once for this browser.
+        $done = $this->get('/install/done');
+        self::assertSame(200, $done->getStatusCode());
+        self::assertStringContainsString('installed', (string) $done->getBody());
+    }
+
     // --- Step-order enforcement -------------------------------------------
 
     public function testJumpingToAdminWithoutDatabaseRedirectsBack(): void
@@ -250,6 +294,17 @@ final class InstallerHttpTest extends TestCase
         self::assertStringContainsString('/assets/theme-init.js', $body);
         self::assertStringNotContainsString('/assets/vendor/pico.min.css', $body);
         self::assertNotSame('', $this->get('/install')->getHeaderLine('Content-Security-Policy'));
+    }
+
+    public function testInstallerResponsesCarryTheFullSecurityHeaderSet(): void
+    {
+        $response = $this->get('/install');
+
+        self::assertStringContainsString("frame-ancestors 'none'", $response->getHeaderLine('Content-Security-Policy'));
+        self::assertSame('DENY', $response->getHeaderLine('X-Frame-Options'));
+        self::assertSame('nosniff', $response->getHeaderLine('X-Content-Type-Options'));
+        self::assertSame('strict-origin-when-cross-origin', $response->getHeaderLine('Referrer-Policy'));
+        self::assertSame('no-store', $response->getHeaderLine('Cache-Control'));
     }
 
     public function testInstallerAssetUrlsCarryTheCurrentVersion(): void

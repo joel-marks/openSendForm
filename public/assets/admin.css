@@ -514,18 +514,36 @@ form { margin-bottom: var(--osf-space-4); }
 /* --- Action groups (buttons/links that act together, e.g. a table row's
    Edit + Disable, or a form's submit + Cancel) -------------------------- */
 
+/* An action row owns a standard top gap from the --osf-space scale, so no page
+   ever hand-adds a margin above its primary action (rhythm has one source). */
 .osf-actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--osf-space-2);
+    margin-top: var(--osf-space-5);
 }
 
-/* The installer's single forward button (Continue / Test and continue): set it
-   apart from the last field above with a clear gap, one step up the spacing
-   scale from the inter-field gap so the primary action reads as separate. */
+/* ...except where an action group is a sub-element of another laid-out row —
+   a table cell's row actions, or a toolbar's side — there the parent owns the
+   spacing and the group must sit tight (no inherited top margin). */
+td .osf-actions,
+.osf-toolbar .osf-actions {
+    margin-top: 0;
+}
+
+/* The installer/stepper action row: primary right, secondary/skip left, in
+   identical placement on every step. The top gap comes from .osf-actions
+   above (single source); this only lays the row out. */
 .osf-step-actions {
-    margin-top: var(--osf-space-5);
+    justify-content: flex-end;
+}
+
+/* The left-hand secondary/skip is pushed away from the primary so it sits on
+   the left while the primary stays on the right — and a lone primary still
+   sits right. */
+.osf-step-actions > .osf-step-skip {
+    margin-right: auto;
 }
 
 /* A toolbar row that pairs a filter/search bar with a separate action off to
@@ -581,7 +599,12 @@ section > h1:first-child { margin-top: 0; }
 
 /* --- Tables (collapse to cards when narrow) --------------------------- */
 
-.osf-table-wrap { overflow-x: auto; }
+/* Tables own their trailing gap from the scale, so content after a table is
+   never left butting against it (rhythm is component-owned, not per page). */
+.osf-table-wrap {
+    overflow-x: auto;
+    margin-bottom: var(--osf-space-5);
+}
 
 .osf-table {
     width: 100%;

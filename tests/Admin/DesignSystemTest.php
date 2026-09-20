@@ -536,6 +536,59 @@ final class DesignSystemTest extends TestCase
         }
     }
 
+    // --- Vertical rhythm: component-owned, single source (Task 2) ----------
+
+    /**
+     * Rhythm lives in admin.css, never per page. The greppable rule (defined
+     * pragmatically here): no page template may carry an inline `style="..."`
+     * attribute that sets BLOCK SPACING — margin, padding or gap. A non-spacing
+     * inline style such as the embed snippet's honeypot `display:none` is fine;
+     * only ad-hoc block spacing is forbidden, because that is exactly what the
+     * component rules in admin.css now own.
+     */
+    public function testTemplatesCarryNoInlineBlockSpacingAndAdminCssOwnsRhythm(): void
+    {
+        $templates = array_merge(
+            glob(self::root() . '/templates/admin/*.php'),
+            glob(self::root() . '/templates/install/*.php'),
+            glob(self::root() . '/templates/_shared/*.php')
+        );
+
+        $inlineSpacing = '/style="[^"]*(?:margin|padding|gap)[^"]*"/i';
+        foreach ($templates as $tpl) {
+            $html = (string) file_get_contents($tpl);
+            self::assertDoesNotMatchRegularExpression(
+                $inlineSpacing,
+                $html,
+                basename($tpl) . ' sets block spacing inline — admin.css owns vertical rhythm'
+            );
+        }
+
+        // admin.css is the single source: the block components carry their
+        // standard margins from the --osf-space scale.
+        $css = self::read('public/assets/admin.css');
+
+        // Action rows own their top gap (so no page hand-adds one).
+        self::assertMatchesRegularExpression(
+            '/\.osf-actions\s*\{[^}]*margin-top:\s*var\(--osf-space-5\)/s',
+            $css,
+            '.osf-actions must own a standard top margin from the scale'
+        );
+        // The installer step action row's OWN rule carries no margin any more —
+        // it only lays the row out; the gap comes from .osf-actions.
+        self::assertMatchesRegularExpression('/\.osf-step-actions\s*\{([^}]*)\}/s', $css);
+        preg_match('/\.osf-step-actions\s*\{([^}]*)\}/s', $css, $stepBlock);
+        self::assertStringNotContainsString(
+            'margin',
+            $stepBlock[1],
+            '.osf-step-actions must not re-declare a one-off margin (single source of rhythm)'
+        );
+        // Fields, tables and panels carry their own vertical margins.
+        self::assertMatchesRegularExpression('/\.osf-field\s*\{[^}]*margin-bottom:\s*var\(--osf-space/s', $css);
+        self::assertMatchesRegularExpression('/\.osf-table-wrap\s*\{[^}]*margin-bottom:\s*var\(--osf-space/s', $css);
+        self::assertMatchesRegularExpression('/section\s*\{[^}]*margin-bottom:\s*var\(--osf-space/s', $css);
+    }
+
     // --- Versioned asset URLs (structural cache-busting) ---------------------
 
     public function testAssetHelperAppendsTheAppVersion(): void

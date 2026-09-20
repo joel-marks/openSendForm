@@ -566,6 +566,17 @@ function cmdMailStatus(Config $config): int
     $host = $config->smtpHost();
     $from = $config->mailFromAddress();
 
+    fwrite(STDOUT, "Email status\n============\n");
+    if ($config->mailEnabled() && $host !== '') {
+        fwrite(STDOUT, "Email sending is ON — submissions will be emailed via {$host}.\n\n");
+    } elseif ($config->mailEnabled() && $host === '') {
+        fwrite(STDOUT, "PROBLEM: sending is on but no SMTP host is set, so nothing can be emailed. "
+            . "Set the SMTP host in the admin panel (Email).\n\n");
+    } else {
+        fwrite(STDOUT, "Email sending is OFF — submissions are stored but not emailed. "
+            . "Turn it on in the admin panel (Email) once your SMTP details are set.\n\n");
+    }
+
     fwrite(STDOUT, "Mail configuration\n");
     fwrite(STDOUT, '  Sending:       ' . ($config->mailEnabled() ? 'ENABLED' : 'off') . "\n");
     fwrite(STDOUT, '  SMTP host:     ' . ($host !== '' ? 'set (' . $host . ')' : 'not set') . "\n");
@@ -830,8 +841,23 @@ function cmdMonitorRun(Database $db, Config $config, Paths $paths): int
     $monitor = buildMonitorService($db, $config, $paths);
     $summary = $monitor->run();
 
+    fwrite(STDOUT, "Monitoring run\n==============\n");
     if ($summary['secret_generated']) {
         fwrite(STDOUT, "Generated MONITOR_SECRET and wrote it to the config file.\n");
+    }
+
+    // Plain-language verdict for a non-technical operator, then the
+    // machine-parsable detail lines beneath.
+    if ($summary['checks_ran'] === 0) {
+        fwrite(STDOUT, "No forms yet — create your first form in the admin panel and monitoring will begin.\n");
+    } elseif ($summary['failures'] === 0) {
+        fwrite(STDOUT, "All checks passed — your forms are being monitored.\n");
+    } else {
+        fwrite(STDOUT, sprintf(
+            "PROBLEM: %d of %d checks failed — see the details below.\n",
+            $summary['failures'],
+            $summary['checks_ran']
+        ));
     }
 
     fwrite(STDOUT, sprintf(
@@ -871,9 +897,24 @@ function cmdMonitorStatus(Database $db, Config $config, Paths $paths): int
     $monitor = buildMonitorService($db, $config, $paths);
     $rows = $monitor->status();
 
+    fwrite(STDOUT, "Monitoring status\n=================\n");
+
     if ($rows === []) {
-        fwrite(STDOUT, "No active forms to monitor.\n");
+        fwrite(STDOUT, "No active forms to monitor. Create your first form in the admin panel to start monitoring.\n");
         return 0;
+    }
+
+    // Plain-language verdict first, then the per-form detail lines.
+    $failing = 0;
+    foreach ($rows as $row) {
+        if ($row['last_ok'] === false) {
+            $failing++;
+        }
+    }
+    if ($failing === 0) {
+        fwrite(STDOUT, "All monitored forms are OK.\n\n");
+    } else {
+        fwrite(STDOUT, sprintf("PROBLEM: %d monitored form(s) are failing — see below.\n\n", $failing));
     }
 
     foreach ($rows as $row) {

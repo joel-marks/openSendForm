@@ -51,7 +51,10 @@ final class CliMonitorTest extends TestCase
         $result = $this->osf(['monitor:status']);
 
         self::assertSame(0, $result['code'], $result['stderr']);
+        self::assertStringContainsString('Monitoring status', $result['stdout']);
         self::assertStringContainsString('No active forms to monitor.', $result['stdout']);
+        // Empty-state guidance points at the next action.
+        self::assertStringContainsString('Create your first form', $result['stdout']);
     }
 
     public function testRunWithNoFormsGeneratesSecretAndExitsZero(): void
@@ -59,7 +62,10 @@ final class CliMonitorTest extends TestCase
         $result = $this->osf(['monitor:run']);
 
         self::assertSame(0, $result['code'], $result['stderr']);
+        self::assertStringContainsString('Monitoring run', $result['stdout']);
         self::assertStringContainsString('Generated MONITOR_SECRET', $result['stdout']);
+        // Plain-language empty-state verdict + machine-parsable detail line.
+        self::assertStringContainsString('No forms yet', $result['stdout']);
         self::assertStringContainsString('checked 0 form(s)', $result['stdout']);
 
         // The secret was written back to the config file.

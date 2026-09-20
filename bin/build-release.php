@@ -64,9 +64,11 @@ function osf_build_exclusions(): array
 }
 
 /**
- * The short, human-facing install note dropped at the root of the zip. It
- * intentionally stays brief and points at the full docs (README / the docs
- * site); the detailed cPanel walk-through lives there.
+ * The human-facing install note dropped at the root of the zip. It prescribes
+ * the friction-free order (upload + extract FIRST, then point the document root
+ * at public/) and teaches how to DISCOVER paths rather than hard-coding any —
+ * shared hosts put sites in different places. The fuller walk-through lives in
+ * the README / the docs site.
  */
 function osf_build_install_txt(string $version): string
 {
@@ -78,23 +80,62 @@ function osf_build_install_txt(string $version): string
 
     INSTALL (first time)
     --------------------
-    1. Upload this zip to your host and extract it. You get one folder,
-       "opensendform/". Its contents are what you deploy.
-    2. Point your domain or subdomain's document root at the "public/" folder.
-       If your host will not let you move the document root, upload the whole
-       "opensendform/" folder into the web root instead — the bundled .htaccess
-       files keep the non-public folders private on Apache hosts.
-    3. Visit your site in a browser. Every page redirects to /install until
-       setup is finished. Follow the wizard (hosting check, database,
-       administrator account, finish).
-    4. Sign in at /admin/login. Set up email delivery from the admin panel.
+    1. UPLOAD & EXTRACT FIRST. Upload this zip to your hosting account and
+       extract it there (cPanel: File Manager -> Upload, then Extract). You get
+       one folder, "opensendform/", containing "bin", "public", "src", "var"
+       and others. Do this before touching any domain settings.
+
+    2. FIND WHERE IT LANDED. You do not need to know absolute paths — look in
+       File Manager for the "opensendform" folder you just extracted (it is the
+       folder that contains both "bin" and "public"). If you are unsure where
+       your host keeps sites, cPanel's own Cron Jobs page shows an example path
+       to your home directory.
+
+    3. FIX PERMISSIONS. Some hosts extract zips with the wrong permissions,
+       which can leave the app unable to run or, worse, expose files. From
+       inside the "opensendform" folder (File Manager's Terminal, or SSH), run:
+
+           find . -type d -exec chmod 755 {} \\;
+           find . -type f -exec chmod 644 {} \\;
+           chmod 755 bin/osf
+
+       This sets directories to 755, files to 644 and the command-line tool
+       bin/osf to 755 — the safe modes the app expects on shared hosting.
+
+    4. POINT THE DOCUMENT ROOT AT public/. Two supported layouts:
+
+       a) Dedicated document root (RECOMMENDED). In cPanel -> Domains (or
+          "Addon/Subdomains"), set the domain's Document Root to the "public"
+          folder INSIDE the extracted folder (e.g. .../opensendform/public).
+          Only public/ is ever web-served; everything else stays private.
+
+       b) Shared public_html. If you cannot change the document root, move the
+          CONTENTS of "opensendform/" into public_html so that public_html
+          holds "bin", "public", "src", "var", etc. The bundled .htaccess files
+          then keep the non-public folders private on Apache hosts.
+
+    5. VERIFY HTTPS. Make sure the domain has a valid certificate before you
+       finish setup (cPanel -> SSL/TLS Status, or "AutoSSL" — run it and wait
+       for the padlock). OpenSendForm's sessions and tokens are safest over
+       HTTPS.
+
+    6. RUN THE WIZARD. Visit the site in a browser; every page redirects to
+       /install until setup is done. Follow it (hosting check, database,
+       administrator account, email sending, finish), then sign in at
+       /admin/login. The final screen gives you the two cron commands to add.
+
+    A note on testing email: a test message sent to a mailbox ON THE SAME
+    SERVER can bypass the SPF/DKIM/DMARC checks that real recipients apply, so
+    it can look fine even when delivery to the outside world is not. For a true
+    test, send to an EXTERNAL mailbox (e.g. a Gmail/Outlook address).
 
     UPGRADE (already installed)
     ---------------------------
     1. Download the new zip and extract it.
-    2. Copy the new files over your existing installation, REPLACING everything
-       EXCEPT the "var/" folder. Your config, database and install lock live in
-       var/ and must be kept.
+    2. Replace ALL of your installation's files with the new ones EXCEPT the
+       "var/" folder. Your config, database and install lock live in var/ and
+       must be kept. (Re-apply the permission commands from step 3 if your host
+       reset them on upload.)
     3. Run "php bin/osf migrate" (or open the admin dashboard and follow the
        "update required" banner) to apply any new database migrations.
 

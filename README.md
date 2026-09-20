@@ -65,26 +65,53 @@ contents you deploy.
 
 ### Installing (cPanel walk-through)
 
-1. **Create the site.** In cPanel, create the subdomain (or domain) you want the
-   service to answer on — for example `forms.example.com`.
-2. **Upload and extract** `opensendform-vX.Y.Z.zip` into that site's folder
-   using the cPanel File Manager, then extract it there.
-3. **Point the document root at `public/`.** In *Domains* (or *Subdomains*),
-   set the site's document root to the `public/` directory inside the extracted
-   `opensendform/` folder. This keeps everything else out of the web root.
-   *(Host won't let you move the document root? See the fallback below.)*
-4. **Visit the site** in a browser and follow the installer at `/install`
-   (hosting check → database → administrator → finish), then sign in at
-   `/admin/login`. Set up email delivery from the admin panel.
+The friction-free order is **upload and extract first, then point the document
+root at the extracted `public/`** — not the other way around. You never need to
+know or type an absolute path; you *discover* where things landed.
 
-**Fallback layout for docroot-locked hosts.** If your host won't let you change
-the document root, upload the whole `opensendform/` folder into the existing web
-root instead and visit `.../public/`. The bundled `.htaccess` files are the
-safety net for this case: every server-side folder (`src/`, `templates/`,
-`migrations/`, `bin/`, `vendor/`, `var/`) ships a deny-all `.htaccess`, so on an
-Apache host a browser still can't reach anything but `public/`. (Deny-all rules
-are Apache-specific; the recommended `public/`-as-document-root layout does not
-depend on them.)
+1. **Upload and extract first.** In the cPanel File Manager, upload
+   `opensendform-vX.Y.Z.zip` into your hosting account and **Extract** it there.
+   You get one folder, `opensendform/`, containing `bin`, `public`, `src`,
+   `var` and others.
+2. **Find where it landed — don't hard-code paths.** In File Manager, the
+   install is simply the folder that contains both `bin` and `public`. If you're
+   unsure where your host keeps sites, cPanel's own **Cron Jobs** page prints an
+   example path to your home directory — that's the shape your host uses.
+3. **Fix permissions.** Some hosts extract zips with loose or wrong modes. From
+   inside the `opensendform/` folder (File Manager's Terminal, or SSH), run:
+   ```
+   find . -type d -exec chmod 755 {} \;
+   find . -type f -exec chmod 644 {} \;
+   chmod 755 bin/osf
+   ```
+   This sets the safe modes the app expects on shared hosting (directories 755,
+   files 644, the `bin/osf` tool 755).
+4. **Point the document root at `public/`.** Two supported layouts:
+   - **Dedicated document root (recommended).** In *Domains* / *Subdomains*, set
+     the site's Document Root to the `public/` directory **inside** the
+     extracted `opensendform/` folder. Only `public/` is ever web-served;
+     everything else stays private.
+   - **Shared `public_html`.** If your host won't let you change the document
+     root, move the **contents** of `opensendform/` into `public_html` so it
+     holds `bin`, `public`, `src`, `var`, … The bundled `.htaccess` files then
+     keep the non-public folders private on Apache hosts. Every server-side
+     folder (`src/`, `templates/`, `migrations/`, `bin/`, `vendor/`, `var/`)
+     ships a deny-all `.htaccess`. (Deny-all rules are Apache-specific; the
+     recommended dedicated-`public/` layout does not depend on them.)
+5. **Verify the certificate (HTTPS).** Before finishing setup, confirm the
+   domain has a valid certificate — cPanel *SSL/TLS Status* / **AutoSSL**: run it
+   and wait for the padlock. Sessions and submit tokens are safest over HTTPS.
+6. **Run the installer.** Visit the site; every page redirects to `/install`
+   until setup is done. Follow it (hosting check → database → administrator →
+   email sending → finish), then sign in at `/admin/login`. The final screen
+   gives you the two cron commands to add (monitoring and email retry) with the
+   real paths already filled in.
+
+> **Testing email delivery honestly.** A test message sent to a mailbox **on the
+> same server** can bypass the SPF/DKIM/DMARC checks that real recipients apply,
+> so it may look fine even when outside delivery is broken. For a true test,
+> send to an **external** mailbox (e.g. a Gmail/Outlook address). See the
+> *Deliverability* tab in the admin panel for the DNS records to publish.
 
 ### Upgrading
 
@@ -93,7 +120,9 @@ Upgrading is a file replace plus a migration:
 1. **Download and extract** the new `opensendform-vX.Y.Z.zip`.
 2. **Copy the new files over your existing installation, replacing everything
    *except* the `var/` folder.** Do not delete or overwrite `var/` — that is
-   where your settings, database and install lock live.
+   where your settings, database and install lock live. If your host resets file
+   permissions on upload, re-run the three `chmod` commands from *Installing*
+   step 3.
 3. **Apply any new database migrations** by running
 
    ```

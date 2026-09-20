@@ -2084,3 +2084,78 @@ all-active form set.
 - Deviations from prompt: none. No unauthorised Composer deps. QUESTIONS.md:
   three non-blocking notes appended (shared TOTP replay counter UX; no admin:list
   companion for reset-2fa; doctrine already matched reality).
+
+## 2026-09-20 — Onboarding v2 (feature/onboarding-v2)
+- Branch: feature/onboarding-v2 (off latest main). A live cPanel deployment
+  walk-through surfaced onboarding, mail-UX, docs and packaging defects; this
+  sprint fixes them. Rulings prescriptive. No Composer deps (none authorised).
+  Docs-site links (opensendform.com/guides/…) are the agreed permanent URLs;
+  the site is not yet live.
+- **T1 Installer small fixes.** Admin-step label "Your name" → "Account name".
+  Installer forward buttons (admin "Continue", database "Test and continue")
+  wrapped in `.osf-actions.osf-step-actions` (new CSS: `margin-top:
+  var(--osf-space-5)`) for clear top spacing. Done-screen "turn on email next"
+  removed; rerun paragraph reworded (locked = safe, cannot be re-run by
+  visitors) with a /guides/reinstall link; optional Turnstile mention added
+  (/guides/turnstile).
+- **T2 Installer mail step + operations onboarding.** New skippable
+  `/install/mail` step after admin creation, reusing a shared SMTP-fields
+  partial (`templates/_shared/mail_fields.php`) and `MailSettingsForm`. Opens
+  with cPanel guidance (a subdomain creates no mailbox → make an Email Account,
+  SMTP under Connect Devices) + a one-line non-cPanel note. Save / test send /
+  skip; skip leaves MAIL_ENABLED=0 and says so. Test send builds a mailer from
+  the just-typed settings via a new `MailerFactory` seam (`PhpMailerFactory`
+  prod; `FixedMailerFactory` in tests) — no config written, no real SMTP under
+  test. `InstallerService::commit($dbConfig, $extra)` now writes the SMTP config
+  and MONITOR_BASE_URL; MONITOR_BASE_URL is captured from the request scheme+host
+  at completion (env still overrides at load). Done screen prints the TWO cron
+  commands verbatim (php via PHP_BINARY + /usr/local/bin/php fallback note;
+  bin/osf path from the app's own location) with the three-step cPanel recipe
+  and one sentence per job.
+- **T3 Mail page UX (/admin/mail, shared with the installer step).** Fields
+  reordered to the cPanel convention (username, password, then host); encryption
+  select leads its row, port second; JS auto-fills the conventional port
+  (587/465/25, then editable); SSL/TLS is the fresh-setup default; password
+  show/hide eye toggle (Lucide, CSP-safe admin.js); failed save clears the
+  password and the copy says to re-enter it; From-address suggestion derived
+  from the SMTP host domain (strips mail./smtp./mx., never overwrites input);
+  MAIL_ENABLED is a switch-styled `:checked` checkbox (reuses `.osf-switch`
+  visuals) with storage-only copy. FormsController now redirects a newly-created
+  form to its own page anchored to the embed panel (`#embed`).
+- **T4 Deliverability tab.** SPF/DKIM/DMARC checker moved off the Email page to
+  its own nav tab (`/admin/deliverability`, new `DeliverabilityController` +
+  template, shield-check icon). Each result names its source (live DNS lookup of
+  a named record for the domain); page states the records concern the sending
+  domain only — recipients are unlimited and need no DNS changes.
+- **T5 CLI output UX.** monitor:run, monitor:status and mail:status gained a
+  clear heading, a plain-language verdict ("All checks passed …" / "PROBLEM: …"
+  / "Email sending is OFF …") and empty-state guidance ("No forms yet — create
+  your first form …"), with the machine-parsable detail lines kept beneath.
+- **T6 Permissions guarantee.** The build stamps a shared mode policy into the
+  zip — dirs 0755, files 0644, bin/osf 0755 — via `osf_zip_dir`'s `$modeFor`
+  callback (external attributes on the ZipArchive path; on-disk chmod before the
+  `zip` CLI fallback). verify-release asserts those exact modes from the
+  archive's own central-directory attributes (`osf_verify_modes`), so a
+  permissive umask on extraction can't mask a wrong stored mode.
+  `osf_release_mode` is the single source of truth. INSTALL.txt gained the
+  post-extract find/chmod step with the why. Real build+verify confirmed
+  end-to-end (bin/osf 755, dirs 755, files 644 in the produced zip).
+- **T7 Install docs rewrite.** INSTALL.txt + README deployment section now
+  prescribe the friction-free order (upload+extract FIRST, then docroot →
+  extracted public/) and teach path discovery (the folder containing bin and
+  public; cPanel's cron page shows where sites live) — no absolute paths.
+  Cover dedicated docroot (recommended) + shared public_html; AutoSSL/cert
+  verification step; upgrade path (replace all except var/, re-chmod, then
+  bin/osf migrate); and the note that same-server recipients bypass DNS auth so
+  a true deliverability test sends to an external mailbox.
+- Tests: new DeliverabilityHttpTest, InstallerMailStepTest, ReleaseModesTest,
+  FixedMailerFactory support; MailWizardHttpTest slimmed (deliverability moved),
+  InstallerHttpTest extended for the mail step + reworked done screen, CLI tests
+  updated for the new headings/verdicts, AdminUiTest create-redirect assertion
+  updated. Test results: **OK — 600 tests, 3746 assertions, all green** (up from
+  589). AppFactory::create() gained a 10th optional param (`?MailerFactory`).
+- Deviations from prompt: none. Four interpretive decisions recorded in
+  QUESTIONS.md (checkbox-styled MAIL_ENABLED switch; fresh-install detection via
+  config-key absence; PHP_BINARY with documented fallback; which "Continue"
+  button got the spacing). Out-of-scope items (Status tab, rebrand, etc.)
+  untouched.

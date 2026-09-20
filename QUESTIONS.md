@@ -1,5 +1,33 @@
 # Open questions for the architect
 
+## Onboarding v2 (2026-09-20, feature/onboarding-v2)
+
+All tasks were prescriptive and implemented as ruled; no blockers. Four
+interpretive decisions recorded for review:
+
+1. **MAIL_ENABLED switch (task 3e) is a `:checked` checkbox, not the button
+   `.osf-switch`.** The existing `.osf-switch` is a standalone CSRF-POST button
+   (immediate toggle, driven by `aria-pressed`). The mail toggle must submit
+   WITH the settings form, so it is an `input[type=checkbox].osf-switch` styled
+   with the same track+thumb (added `appearance:none` + `:checked` rules beside
+   the button variant). Same visual language; degrades to a plain checkbox with
+   no CSS. Flag if a literal shared control was intended.
+
+2. **"Fresh install" SSL/TLS default (task 3a) is detected by config-file key
+   absence.** The admin Email page preselects SSL/TLS + 465 only when neither
+   `SMTP_HOST` nor `SMTP_ENCRYPTION` exists in var/config.php (never configured);
+   once saved, the stored choice wins. The installer step always leads with the
+   friendly default. No blocker.
+
+3. **Cron `php` path uses `PHP_BINARY` (task 2d).** Under a web SAPI `PHP_BINARY`
+   can be a non-CLI binary (php-fpm), so the done screen bakes it in AND states
+   the common `/usr/local/bin/php` fallback verbatim, exactly as the ruling
+   allows. If a host's web/CLI PHP differ, the operator swaps the leading path.
+
+4. **"Step Continue button" spacing (task 1a).** Interpreted as the installer's
+   forward buttons (admin "Continue" + database "Test and continue"); both now
+   sit in `.osf-actions.osf-step-actions` with a `--osf-space-5` top margin.
+
 ## Hardening sweep (2026-09-16, feature/hardening-sweep)
 
 All tasks were prescriptive and implemented as ruled; no blockers. Two

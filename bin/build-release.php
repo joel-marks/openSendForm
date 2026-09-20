@@ -192,7 +192,9 @@ function osf_build_main(): int
             throw new RuntimeException("Cannot create dist dir: {$distDir}");
         }
         fwrite(STDOUT, "  - zipping -> {$zipPath}\n");
-        osf_zip_dir($work, $folder, $zipPath);
+        // Stamp the shared mode policy into the archive: dirs 755, files 644,
+        // bin/osf 755. verify-release asserts these exact modes.
+        osf_zip_dir($work, $folder, $zipPath, 'osf_release_mode');
     } catch (Throwable $e) {
         fwrite(STDERR, 'Build failed: ' . $e->getMessage() . "\n");
         osf_rrmdir($work);

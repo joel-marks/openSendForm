@@ -88,40 +88,82 @@ function osf_rrmdir(string $path): void
  * Prefers the PHP zip extension (ZipArchive); falls back to the `zip` CLI on
  * hosts/containers where the extension is not compiled in. Both produce the
  * same layout.
+ *
+ * $modeFor, when given, decides the stored unix mode of each entry — called as
+ * $modeFor(string $relPathInsideFolder, bool $isDir): int. The ZipArchive path
+ * writes it as the entry's external attributes; the CLI path chmods the on-disk
+ * tree first so `zip -X` stores the same modes. This is how the release build
+ * guarantees dirs 755 / files 644 / bin/osf 755 inside the artefact.
  */
-function osf_zip_dir(string $sourceParent, string $folderName, string $zipPath): void
+function osf_zip_dir(string $sourceParent, string $folderName, string $zipPath, ?callable $modeFor = null): void
 {
     if (is_file($zipPath)) {
         unlink($zipPath);
     }
+
+    $root = $sourceParent . '/' . $folderName;
 
     if (class_exists('ZipArchive')) {
         $zip = new ZipArchive();
         if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
             throw new RuntimeException("Cannot create zip: {$zipPath}");
         }
-        $root = $sourceParent . '/' . $folderName;
         $it = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
             RecursiveIteratorIterator::SELF_FIRST
         );
         $zip->addEmptyDir($folderName);
+        if ($modeFor !== null) {
+            $zip->setExternalAttributesName($folderName . '/', ZipArchive::OPSYS_UNIX, $modeFor('', true) << 16);
+        }
         foreach ($it as $file) {
             $absolute = (string) $file;
-            $local = $folderName . '/' . substr($absolute, strlen($root) + 1);
+            $rel = substr($absolute, strlen($root) + 1);
+            $local = $folderName . '/' . $rel;
             if ($file->isDir()) {
                 $zip->addEmptyDir($local);
+                $name = $local . '/';
             } else {
                 $zip->addFile($absolute, $local);
+                $name = $local;
+            }
+            if ($modeFor !== null) {
+                $zip->setExternalAttributesName($name, ZipArchive::OPSYS_UNIX, $modeFor($rel, $file->isDir()) << 16);
             }
         }
         $zip->close();
         return;
     }
 
-    // Fallback: the `zip` binary. Run it from the parent so paths inside the
-    // archive are relative to (and prefixed by) the folder name.
+    // Fallback: the `zip` binary stores on-disk modes, so chmod the tree to the
+    // target modes first, then archive from the parent (paths prefixed by the
+    // folder name).
+    if ($modeFor !== null) {
+        @chmod($root, $modeFor('', true));
+        $it = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::SELF_FIRST
+        );
+        foreach ($it as $file) {
+            $rel = substr((string) $file, strlen($root) + 1);
+            @chmod((string) $file, $modeFor($rel, $file->isDir()));
+        }
+    }
     osf_run(['zip', '-r', '-q', '-X', $zipPath, $folderName], $sourceParent);
+}
+
+/**
+ * The release file-mode policy, shared by the build (which stamps it into the
+ * zip) and verify (which asserts it): directories 0755, files 0644, with the
+ * single executable bin/osf at 0755. One source of truth so the two can't drift.
+ */
+function osf_release_mode(string $relPath, bool $isDir): int
+{
+    if ($isDir) {
+        return 0755;
+    }
+
+    return $relPath === 'bin/osf' ? 0755 : 0644;
 }
 
 /**

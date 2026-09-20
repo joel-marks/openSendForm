@@ -177,7 +177,7 @@ if (($installUrl) !== '' && $formKey !== null) {
 
 <?php if ($snippet !== ''): ?>
     <hr>
-    <section aria-labelledby="embed-heading">
+    <section id="embed" aria-labelledby="embed-heading">
         <h2 id="embed-heading">Embed code</h2>
         <p>Paste this into any page you want the form on. It is two parts: a plain
             HTML form and one <code>&lt;script&gt;</code> line. The form posts to

@@ -233,14 +233,18 @@ final class InstallerService
      * is true.
      *
      * @param array{driver:string, dsn:string, user:string, pass:string, summary:string} $dbConfig
+     * @param array<string, string> $extra Additional config key => value pairs
+     *        gathered by the wizard: the SMTP settings + MAIL_ENABLED from the
+     *        email step (absent when it was skipped) and MONITOR_BASE_URL
+     *        captured from the request. These override the base defaults.
      *
      * @throws InstallerException if either file cannot be written.
      */
-    public function commit(array $dbConfig): void
+    public function commit(array $dbConfig, array $extra = []): void
     {
         $configWritten = false;
         try {
-            $this->atomicWrite($this->paths->configPath, $this->renderConfig($dbConfig));
+            $this->atomicWrite($this->paths->configPath, $this->renderConfig($dbConfig, $extra));
             $configWritten = true;
             $this->atomicWrite($this->paths->lockPath, $this->renderLock());
         } catch (Throwable $e) {
@@ -258,8 +262,10 @@ final class InstallerService
 
     /**
      * @param array{driver:string, dsn:string, user:string, pass:string, summary:string} $dbConfig
+     * @param array<string, string> $extra Wizard-gathered overrides (mail settings,
+     *        MONITOR_BASE_URL) layered over the base values.
      */
-    private function renderConfig(array $dbConfig): string
+    private function renderConfig(array $dbConfig, array $extra = []): string
     {
         $values = [
             'APP_ENV'      => 'production',
@@ -267,9 +273,19 @@ final class InstallerService
             'DB_DSN'       => $dbConfig['dsn'],
             'DB_USER'      => $dbConfig['user'],
             'DB_PASS'      => $dbConfig['pass'],
-            // Email sending is switched on later, from the admin panel (6b).
+            // Email sending stays off unless the email step configured it; the
+            // step (or the admin panel later) sets MAIL_ENABLED via $extra.
             'MAIL_ENABLED' => '0',
         ];
+
+        // Only recognised config keys are honoured, so a stray posted key can
+        // never leak into the file.
+        $allowed = array_keys(Config::defaults());
+        foreach ($extra as $key => $value) {
+            if (in_array($key, $allowed, true)) {
+                $values[$key] = (string) $value;
+            }
+        }
 
         $lines = '';
         foreach ($values as $key => $value) {
@@ -288,8 +304,8 @@ final class InstallerService
             . " * is how the development container supplies its own settings. To change a\n"
             . " * value on a normal install, edit it below.\n"
             . " *\n"
-            . " * MAIL_ENABLED is 0: submissions are stored but no email is sent yet. Finish\n"
-            . " * email setup from the admin panel to start delivering.\n"
+            . " * When MAIL_ENABLED is 0 submissions are stored but no email is sent; turn\n"
+            . " * sending on from the admin panel (Email) to start delivering.\n"
             . " */\n\n"
             . "return [\n"
             . $lines

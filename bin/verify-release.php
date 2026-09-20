@@ -83,6 +83,53 @@ function osf_verify_required(): array
     ];
 }
 
+/**
+ * Assert the unix mode stored for every entry in the zip matches the shared
+ * release policy (osf_release_mode): dirs 0755, files 0644, bin/osf 0755. Reads
+ * the archive's central-directory external attributes directly, so a permissive
+ * local umask on extraction cannot mask a wrong stored mode. Returns a list of
+ * problem strings (empty when all modes are correct).
+ *
+ * @return array<int, string>
+ */
+function osf_verify_modes(string $zipPath, string $folder): array
+{
+    if (!class_exists('ZipArchive')) {
+        // No ext-zip to read attributes; the extraction-based checks still ran.
+        return [];
+    }
+
+    $zip = new ZipArchive();
+    if ($zip->open($zipPath) !== true) {
+        return ['could not reopen zip to verify file modes'];
+    }
+
+    $problems = [];
+    for ($i = 0; $i < $zip->numFiles; $i++) {
+        $name = (string) $zip->getNameIndex($i);
+        if ($name === '' || strpos($name, $folder . '/') !== 0) {
+            continue;
+        }
+        $isDir = substr($name, -1) === '/';
+        $rel = rtrim(substr($name, strlen($folder) + 1), '/');
+
+        $opsys = 0;
+        $attr = 0;
+        if (!$zip->getExternalAttributesIndex($i, $opsys, $attr)) {
+            $problems[] = "no stored mode for {$name}";
+            continue;
+        }
+        $mode = ($attr >> 16) & 0777;
+        $expected = osf_release_mode($rel, $isDir);
+        if ($mode !== $expected) {
+            $problems[] = sprintf('%s has mode %04o, expected %04o', $name, $mode, $expected);
+        }
+    }
+    $zip->close();
+
+    return $problems;
+}
+
 function osf_verify_main(array $argv): int
 {
     $projectRoot = dirname(__DIR__);
@@ -153,6 +200,13 @@ function osf_verify_main(array $argv): int
         $installTxt = (string) @file_get_contents($root . '/INSTALL.txt');
         if (strpos($installTxt, $version) === false) {
             $failures[] = 'INSTALL.txt does not mention the version';
+        }
+
+        // 5. File modes stored inside the zip: dirs 755, files 644, bin/osf 755.
+        //    Read from the archive's own external attributes (not the extracted
+        //    tree), so the guarantee is about what shipped, not the local umask.
+        foreach (osf_verify_modes($zipPath, $folder) as $problem) {
+            $failures[] = $problem;
         }
     } catch (Throwable $e) {
         fwrite(STDERR, 'FAIL: ' . $e->getMessage() . "\n");

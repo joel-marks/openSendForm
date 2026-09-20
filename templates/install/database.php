@@ -82,5 +82,7 @@ $driver = $driver === 'mysql' ? 'mysql' : 'sqlite';
         </div>
     </section>
 
-    <button type="submit">Test and continue</button>
+    <div class="osf-actions osf-step-actions">
+        <button type="submit">Test and continue</button>
+    </div>
 </form>

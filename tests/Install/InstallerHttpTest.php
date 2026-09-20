@@ -104,9 +104,22 @@ final class InstallerHttpTest extends TestCase
             'password_confirm' => self::ADMIN_PASSWORD,
         ]);
         self::assertSame(302, $adminSubmit->getStatusCode());
-        self::assertSame('/install/finish', $adminSubmit->getHeaderLine('Location'));
+        self::assertSame('/install/mail', $adminSubmit->getHeaderLine('Location'));
 
-        // Step 4: review + commit.
+        // Step 4: email sending — reachable, cPanel-guided, and skippable.
+        $mailPage = $this->get('/install/mail');
+        self::assertSame(200, $mailPage->getStatusCode());
+        $mailBody = (string) $mailPage->getBody();
+        self::assertStringContainsString('Set up email sending', $mailBody);
+        self::assertStringContainsString('Connect Devices', $mailBody);
+        $mailSkip = $this->post('/install/mail', [
+            '_csrf'  => $this->csrfFrom($mailPage),
+            'action' => 'skip',
+        ]);
+        self::assertSame(302, $mailSkip->getStatusCode());
+        self::assertSame('/install/finish', $mailSkip->getHeaderLine('Location'));
+
+        // Step 5: review + commit.
         $finishPage = $this->get('/install/finish');
         self::assertSame(200, $finishPage->getStatusCode());
         self::assertStringContainsString('Built-in database', (string) $finishPage->getBody());
@@ -115,13 +128,16 @@ final class InstallerHttpTest extends TestCase
         self::assertSame(302, $finishSubmit->getStatusCode());
         self::assertSame('/install/done', $finishSubmit->getHeaderLine('Location'));
 
-        // Step 5: success screen and, on disk, an installed app.
+        // Step 6: success screen and, on disk, an installed app.
         $done = $this->get('/install/done');
         self::assertSame(200, $done->getStatusCode());
         self::assertStringContainsString('installed', (string) $done->getBody());
-        self::assertStringContainsString('var/install.lock', (string) $done->getBody());
-        // Post-install handoff: the done screen points at the mail-setup wizard.
-        self::assertStringContainsString('/admin/mail', (string) $done->getBody());
+        // The scheduled-tasks section prints the two cron commands verbatim.
+        self::assertStringContainsString('monitor:run', (string) $done->getBody());
+        self::assertStringContainsString('mail:retry', (string) $done->getBody());
+        self::assertStringContainsString('Cron Jobs', (string) $done->getBody());
+        // Reinstall guidance replaces the old "turn on email next" copy.
+        self::assertStringContainsString('/guides/reinstall', (string) $done->getBody());
 
         self::assertTrue($this->paths->isInstalled());
 
@@ -357,10 +373,19 @@ final class InstallerHttpTest extends TestCase
         $dbPage = $this->get('/install/database');
         $this->post('/install/database', ['_csrf' => $this->csrfFrom($dbPage), 'db_driver' => 'sqlite']);
         $adminPage = $this->get('/install/admin');
+        $this->post('/install/admin', [
+            '_csrf'            => $this->csrfFrom($adminPage),
+            'name'             => 'The Boss',
+            'email'            => self::ADMIN_EMAIL,
+            'password'         => self::ADMIN_PASSWORD,
+            'password_confirm' => self::ADMIN_PASSWORD,
+        ]);
+        $mailPage = $this->get('/install/mail');
 
         AdminUiFieldWrapperAssertions::assertNoOrphanControls($welcome, 'install/welcome');
         AdminUiFieldWrapperAssertions::assertNoOrphanControls((string) $dbPage->getBody(), 'install/database');
         AdminUiFieldWrapperAssertions::assertNoOrphanControls((string) $adminPage->getBody(), 'install/admin');
+        AdminUiFieldWrapperAssertions::assertNoOrphanControls((string) $mailPage->getBody(), 'install/mail');
     }
 
     // --- Helpers ----------------------------------------------------------

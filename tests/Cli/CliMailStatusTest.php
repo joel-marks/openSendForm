@@ -41,6 +41,10 @@ final class CliMailStatusTest extends TestCase
         ]);
 
         self::assertSame(0, $result['code'], $result['stderr']);
+        // Clear heading + plain-language verdict for a non-technical operator.
+        self::assertStringContainsString('Email status', $result['stdout']);
+        self::assertStringContainsString('Email sending is OFF', $result['stdout']);
+        // Machine-parsable detail lines remain beneath.
         self::assertStringContainsString('Mail configuration', $result['stdout']);
         self::assertStringContainsString('Sending:       off', $result['stdout']);
         self::assertStringContainsString('set (smtp.test.internal)', $result['stdout']);

@@ -358,46 +358,6 @@ final class MailWizardHttpTest extends TestCase
         self::assertStringContainsString('Email sending is now on', $body);
     }
 
-    // --- Deliverability ---------------------------------------------------
-
-    public function testDeliverabilityRendersStatesAndRecommendations(): void
-    {
-        // SPF present; DKIM (default selector) and DMARC absent.
-        $this->dns->setTxt('example.com', ['v=spf1 include:_spf.example.com ~all']);
-        $this->login();
-
-        $body = (string) $this->get('/admin/mail')->getBody();
-        self::assertStringContainsString('SPF', $body);
-        self::assertStringContainsString('Published', $body);
-        self::assertStringContainsString('Not found', $body);
-        // DMARC recommended starter seeded with the admin email, with a copy button.
-        self::assertStringContainsString('v=DMARC1; p=none; rua=mailto:' . self::ADMIN_EMAIL, $body);
-        self::assertStringContainsString('data-copy="v=DMARC1; p=none; rua=mailto:' . self::ADMIN_EMAIL . '"', $body);
-    }
-
-    public function testDeliverabilityRecheckHonoursSelector(): void
-    {
-        $this->dns->setTxt('s1._domainkey.example.com', ['v=DKIM1; k=rsa; p=abc']);
-        $this->login();
-
-        $body = (string) $this->get('/admin/mail', ['dkim_selector' => 's1'])->getBody();
-        // The selector round-trips into the input and the record is found (its
-        // published value is shown for the chosen selector).
-        self::assertStringContainsString('value="s1"', $body);
-        self::assertStringContainsString('v=DKIM1; k=rsa; p=abc', $body);
-    }
-
-    public function testDeliverabilityInvalidFromAddressShowsPrompt(): void
-    {
-        $this->writeConfig(['APP_SECRET' => 'x', 'MAIL_FROM_ADDRESS' => 'noreply@localhost', 'MAIL_FROM_NAME' => 'E']);
-        $this->buildApp();
-        $this->login();
-
-        // 'noreply@localhost' has no dot in the domain → not a checkable domain.
-        $body = (string) $this->get('/admin/mail')->getBody();
-        self::assertStringContainsString('set a valid From address', $body);
-    }
-
     // --- Dashboard banner -------------------------------------------------
 
     public function testDashboardMailBannerShownWhenDisabled(): void

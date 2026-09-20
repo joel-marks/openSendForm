@@ -78,7 +78,10 @@ final class FormsController
 
         self::flash($c)->success('Form "' . $form['name'] . '" created.');
 
-        return self::redirect($response, '/admin/forms');
+        // Land on the new form's own page, scrolled to its embed-code panel, so
+        // the snippet to paste is immediately in front of the operator rather
+        // than back on the bare list.
+        return self::redirect($response, '/admin/forms/' . (int) $form['id'] . '/edit#embed');
     }
 
     // --- Edit -------------------------------------------------------------

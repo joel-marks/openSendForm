@@ -89,6 +89,10 @@ final class AdminRoutes
             $group->post('/mail/enable', self::handler($container, [MailController::class, 'enable']))
                 ->add($auth);
 
+            // Deliverability (SPF/DKIM/DMARC checker for the sending domain).
+            $group->get('/deliverability', self::handler($container, [DeliverabilityController::class, 'index']))
+                ->add($auth);
+
             // Forms CRUD.
             $group->get('/forms', self::handler($container, [FormsController::class, 'index']))
                 ->add($auth);

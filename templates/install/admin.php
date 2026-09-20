@@ -24,7 +24,7 @@ use function OpenSendForm\Admin\h;
     <input type="hidden" name="_csrf" value="<?= h($csrf) ?>">
 
     <div class="osf-field">
-        <label for="name">Your name</label>
+        <label for="name">Account name</label>
         <input type="text" id="name" name="name" value="<?= h($name) ?>" required autofocus>
     </div>
 
@@ -48,5 +48,7 @@ use function OpenSendForm\Admin\h;
                autocomplete="new-password" minlength="<?= h((string) $minPasswordLength) ?>" required>
     </div>
 
-    <button type="submit">Continue</button>
+    <div class="osf-actions osf-step-actions">
+        <button type="submit">Continue</button>
+    </div>
 </form>

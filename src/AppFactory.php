@@ -29,8 +29,10 @@ use OpenSendForm\Install\PdoDbConnector;
 use OpenSendForm\Mail\DeliverabilityChecker;
 use OpenSendForm\Mail\DeliveryService;
 use OpenSendForm\Mail\DnsResolver;
+use OpenSendForm\Mail\MailerFactory;
 use OpenSendForm\Mail\MailerInterface;
 use OpenSendForm\Mail\MessageBuilder;
+use OpenSendForm\Mail\PhpMailerFactory;
 use OpenSendForm\Mail\PhpMailerMailer;
 use OpenSendForm\Mail\SystemDnsResolver;
 use OpenSendForm\RateLimit\RateLimiter;
@@ -100,7 +102,8 @@ final class AppFactory
         ?TurnstileVerifierInterface $turnstile = null,
         ?SessionInterface $session = null,
         ?Paths $installPaths = null,
-        ?DnsResolver $mailDns = null
+        ?DnsResolver $mailDns = null,
+        ?MailerFactory $mailerFactory = null
     ): App {
         $config ??= Config::fromEnvironment();
         $db ??= Database::connect($config->dbDsn(), $config->dbUser(), $config->dbPass());
@@ -109,12 +112,13 @@ final class AppFactory
         $turnstile ??= new CurlTurnstileVerifier();
         $session ??= new NativeSession();
         $mailDns ??= new SystemDnsResolver();
+        $mailerFactory ??= new PhpMailerFactory();
 
         // Gating is opt-in: enabled only when explicit install paths are given.
         $gateInstall = $installPaths !== null;
         $installPaths ??= Paths::production();
 
-        $container = self::buildContainer($config, $db, $dns, $clock, $mailer, $turnstile, $session, $installPaths, $mailDns);
+        $container = self::buildContainer($config, $db, $dns, $clock, $mailer, $turnstile, $session, $installPaths, $mailDns, $mailerFactory);
 
         SlimAppFactory::setContainer($container);
         $app = SlimAppFactory::create();
@@ -156,7 +160,8 @@ final class AppFactory
         TurnstileVerifierInterface $turnstile,
         SessionInterface $session,
         Paths $installPaths,
-        DnsResolver $mailDns
+        DnsResolver $mailDns,
+        MailerFactory $mailerFactory
     ): Container {
         $container = new Container();
 
@@ -205,6 +210,10 @@ final class AppFactory
         // delivery pipeline is wired, so a test can be sent while sending is
         // still off. Tests inject a fake via the $mailer argument.
         $container->set(MailerInterface::class, $mailer ?? new PhpMailerMailer($config));
+        // Factory that builds a mailer from arbitrary settings — the installer's
+        // "Email sending" step uses it to test-send the just-typed SMTP details
+        // before anything is written to config.
+        $container->set(MailerFactory::class, $mailerFactory);
         // TXT resolver + deliverability checker for the SPF/DKIM/DMARC section.
         $container->set(DnsResolver::class, $mailDns);
         $container->set(DeliverabilityChecker::class, new DeliverabilityChecker($mailDns));

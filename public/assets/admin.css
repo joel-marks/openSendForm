@@ -297,11 +297,16 @@ main.container {
     display: flex;
     flex-wrap: wrap;           /* tabs wrap on narrow viewports */
     align-items: center;
-    /* Keep the row's surface + hairline visible even when it holds no tabs
-       (the chrome-only variant on login/installer/error/submit pages). */
-    min-height: 2rem;
     gap: 0 var(--osf-space-4);
     background: transparent;   /* pinned: never shadow .osf-tabnav's surface */
+}
+
+/* When the tab row holds NO nav items (the chrome-only variant on login,
+   installer, error and submit pages), keep it at a tab-row height so its
+   shared surface + hairline still read as a band. The populated admin tab row
+   is never :empty, so its layout is untouched. */
+.osf-tabnav-inner:empty {
+    min-height: 2rem;
 }
 
 .osf-tab-link {

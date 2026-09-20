@@ -148,10 +148,12 @@ async function run() {
       { row: 'header', label: 'header@50%', ...sample(boxes.header, 0.50, midHeader), expect: expInset, token: '--osf-bg-inset' },
       { row: 'header', label: 'header@60%', ...sample(boxes.header, 0.60, midHeader), expect: expInset, token: '--osf-bg-inset' },
       // Row 2 (.osf-tabnav) — empty right side, above the 1px bottom border.
-      // Same surface as row 1: --osf-bg-inset (one-surface ruling).
-      { row: 'tabnav', label: 'tabnav@60%', ...sample(boxes.tabnav, 0.60, midTab - 2), expect: expInset, token: '--osf-bg-inset' },
-      { row: 'tabnav', label: 'tabnav@78%', ...sample(boxes.tabnav, 0.78, midTab - 2), expect: expInset, token: '--osf-bg-inset' },
-      { row: 'tabnav', label: 'tabnav@92%', ...sample(boxes.tabnav, 0.92, midTab - 2), expect: expInset, token: '--osf-bg-inset' },
+      // Same surface as row 1: --osf-bg-inset (one-surface ruling). The tab
+      // strip now carries six tabs and reaches ~60% of the width, so the
+      // empty-surface samples sit to the RIGHT of it (past the last tab).
+      { row: 'tabnav', label: 'tabnav@80%', ...sample(boxes.tabnav, 0.80, midTab - 2), expect: expInset, token: '--osf-bg-inset' },
+      { row: 'tabnav', label: 'tabnav@88%', ...sample(boxes.tabnav, 0.88, midTab - 2), expect: expInset, token: '--osf-bg-inset' },
+      { row: 'tabnav', label: 'tabnav@96%', ...sample(boxes.tabnav, 0.96, midTab - 2), expect: expInset, token: '--osf-bg-inset' },
     ];
 
     const sampled = await page.evaluate(async ({ dataUrl, points }) => {

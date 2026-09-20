@@ -344,9 +344,11 @@ final class DesignSystemTest extends TestCase
         self::assertStringContainsString('<summary class="osf-nav-link osf-admin-name">', $nav);
         self::assertStringContainsString("icon('chevron-down'", $nav);
 
-        // The panel holds the account link and the logout form as menu items.
+        // The panel holds the account link, the external Reinstall guide link
+        // (styled like Docs: new tab + noopener) and the logout form.
         self::assertStringContainsString('class="osf-account-panel"', $nav);
         self::assertStringContainsString('href="/admin/account">Your account</a>', $nav);
+        self::assertStringContainsString('href="https://opensendform.com/guides/reinstall"', $nav);
         self::assertStringContainsString('action="/admin/logout"', $nav);
         self::assertStringContainsString('osf-account-item--danger', $nav);
 

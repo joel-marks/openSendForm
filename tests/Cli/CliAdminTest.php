@@ -92,6 +92,39 @@ final class CliAdminTest extends TestCase
         self::assertStringContainsString('already exists', $result['stderr']);
     }
 
+    // --- admin:list ---------------------------------------------------
+
+    public function testListShowsEmptyStateWhenNoAdmins(): void
+    {
+        // Prime the schema without creating any admin.
+        $this->repo();
+
+        $result = $this->osf(['admin:list'], '');
+
+        self::assertSame(0, $result['code'], $result['stderr']);
+        self::assertStringContainsString('No admins yet', $result['stdout']);
+    }
+
+    public function testListShowsIdNameEmailActiveAnd2faState(): void
+    {
+        $repo = $this->repo();
+        $boss = $repo->createAdmin('boss@example.com', 'The Boss', 'a-strong-password');
+        $ghost = $repo->createAdmin('ghost@example.com', 'Ghost', 'a-strong-password');
+        $repo->setActive($ghost['id'], false);
+        // The boss has 2FA on; the ghost does not.
+        $repo->setTotp($boss['id'], 'JBSWY3DPEHPK3PXP');
+        $repo->enableTotp($boss['id']);
+
+        $result = $this->osf(['admin:list'], '');
+
+        self::assertSame(0, $result['code'], $result['stderr']);
+        $out = $result['stdout'];
+        self::assertStringContainsString('#' . $boss['id'] . '  The Boss  <boss@example.com>  [active]  2FA on', $out);
+        self::assertStringContainsString('#' . $ghost['id'] . '  Ghost  <ghost@example.com>  [inactive]  2FA off', $out);
+        // Never leaks a secret.
+        self::assertStringNotContainsString('JBSWY3DPEHPK3PXP', $out);
+    }
+
     // --- admin:delete -------------------------------------------------
 
     public function testDeletesAdminById(): void

@@ -501,6 +501,13 @@ form { margin-bottom: var(--osf-space-4); }
     gap: var(--osf-space-2);
 }
 
+/* The installer's single forward button (Continue / Test and continue): set it
+   apart from the last field above with a clear gap, one step up the spacing
+   scale from the inter-field gap so the primary action reads as separate. */
+.osf-step-actions {
+    margin-top: var(--osf-space-5);
+}
+
 /* A toolbar row that pairs a filter/search bar with a separate action off to
    the side (e.g. the submissions filter bar + "Retry all due now"): the two
    groups sit on one row with clear separation, wrapping gracefully. */
@@ -722,6 +729,63 @@ section > h1:first-child { margin-top: 0; }
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+/* Checkbox rendered as the switch (the mail "send emails" toggle): the same
+   track + thumb as the button switch above, driven by :checked instead of
+   aria-pressed. Degrades to a normal checkbox with no CSS. */
+input[type="checkbox"].osf-switch {
+    appearance: none;
+    -webkit-appearance: none;
+    margin: 0;
+    vertical-align: middle;
+}
+
+input[type="checkbox"].osf-switch:checked {
+    background: var(--osf-success);
+    border-color: var(--osf-success);
+}
+
+input[type="checkbox"].osf-switch:checked::before {
+    transform: translateX(1rem);
+}
+
+input[type="checkbox"].osf-switch:focus-visible {
+    outline: 2px solid var(--osf-focus-ring);
+    outline-offset: 2px;
+}
+
+/* Label that pairs the switch with its text on one row. */
+.osf-switch-field {
+    display: flex;
+    align-items: center;
+    gap: var(--osf-space-2);
+    margin: 0;
+}
+
+/* --- Password field with a show/hide toggle --------------------------- */
+
+.osf-password {
+    display: flex;
+    align-items: stretch;
+    gap: var(--osf-space-2);
+}
+
+.osf-password input {
+    flex: 1 1 auto;
+}
+
+.osf-password-toggle {
+    flex: none;
+}
+
+/* Show the "eye" (reveal) glyph by default; swap to "eye-off" once revealed. */
+.osf-password-toggle .osf-icon-hidden { display: none; }
+.osf-password-toggle.osf-password-visible .osf-icon-shown { display: none; }
+.osf-password-toggle.osf-password-visible .osf-icon-hidden { display: inline-block; }
+
+/* Small hint variants used beside form fields. */
+.osf-hint-warn { color: var(--osf-danger); }
+.osf-source { color: var(--osf-text-subtle); }
 
 /* --- Badges & status pills -------------------------------------------- */
 

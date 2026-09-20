@@ -53,6 +53,7 @@ $tab = static function (string $key, string $href, string $label, string $iconNa
         <?= $tab('forms', '/admin/forms', 'Forms', 'file-text') ?>
         <?= $tab('submissions', '/admin/submissions', 'Submissions', 'inbox') ?>
         <?= $tab('mail', '/admin/mail', 'Email', 'mail') ?>
+        <?= $tab('deliverability', '/admin/deliverability', 'Deliverability', 'shield-check') ?>
         <?= $tab('admins', '/admin/admins', 'Admins', 'users') ?>
     </div>
 </nav>

@@ -206,7 +206,11 @@ final class AdminUiTest extends TestCase
         ]);
 
         self::assertSame(302, $response->getStatusCode());
-        self::assertSame('/admin/forms', $response->getHeaderLine('Location'));
+        // Lands on the new form's own page, scrolled to its embed-code panel.
+        self::assertSame(
+            '/admin/forms/' . (int) $this->forms->listForms()[0]['id'] . '/edit#embed',
+            $response->getHeaderLine('Location')
+        );
 
         $forms = $this->forms->listForms();
         self::assertCount(1, $forms);

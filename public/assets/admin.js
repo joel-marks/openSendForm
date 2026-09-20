@@ -15,6 +15,11 @@
  *   [data-qr]                    — render an otpauth URI as an SVG QR (needs qrcode.js).
  *   [data-recovery-codes]        — copy-all / download-as-txt / "saved" gate.
  *   [data-theme-toggle]          — cycle the colour theme (dark/light/auto).
+ *   [data-password-toggle]       — show/hide a password field (id in the value).
+ *   [data-encryption-select]     — auto-fill [data-smtp-port] with the chosen
+ *                                  transport's default port.
+ *   [data-smtp-host]             — suggest a From address for [data-from-address]
+ *                                  from the host's domain (never overwrites input).
  */
 (function () {
     'use strict';
@@ -373,12 +378,75 @@
         }
     }
 
+    // --- Password show/hide -------------------------------------------
+    function initPasswordToggles() {
+        var buttons = document.querySelectorAll('[data-password-toggle]');
+        for (var i = 0; i < buttons.length; i++) {
+            (function (button) {
+                var input = document.getElementById(button.getAttribute('data-password-toggle'));
+                if (!input) {
+                    return;
+                }
+                button.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    var reveal = input.getAttribute('type') === 'password';
+                    input.setAttribute('type', reveal ? 'text' : 'password');
+                    button.classList.toggle('osf-password-visible', reveal);
+                    button.setAttribute('aria-label', reveal ? 'Hide password' : 'Show password');
+                });
+            })(buttons[i]);
+        }
+    }
+
+    // --- SMTP encryption -> default port ------------------------------
+    function initEncryptionPort() {
+        var select = document.querySelector('[data-encryption-select]');
+        var port = document.querySelector('[data-smtp-port]');
+        if (!select || !port) {
+            return;
+        }
+        select.addEventListener('change', function () {
+            var option = select.options[select.selectedIndex];
+            var def = option && option.getAttribute('data-default-port');
+            if (def) {
+                port.value = def;
+            }
+        });
+    }
+
+    // --- From-address suggestion from the SMTP host -------------------
+    // Strips a leading mail./smtp./mx. label off the host, then offers
+    // "noreply@<domain>" as a From address. Only ever replaces our own prior
+    // suggestion or an empty field, so a value the operator typed is untouched.
+    function initFromSuggestion() {
+        var host = document.querySelector('[data-smtp-host]');
+        var from = document.querySelector('[data-from-address]');
+        if (!host || !from) {
+            return;
+        }
+        var lastSuggestion = '';
+        host.addEventListener('input', function () {
+            var domain = host.value.trim().toLowerCase().replace(/^(mail|smtp|mx)\./, '');
+            if (domain.indexOf('.') === -1) {
+                return;
+            }
+            var suggestion = 'noreply@' + domain;
+            if (from.value === '' || from.value === lastSuggestion) {
+                from.value = suggestion;
+            }
+            lastSuggestion = suggestion;
+        });
+    }
+
     function onReady() {
         initThemeToggle();
         initCopyButtons();
         initTotpBoxes();
         initQr();
         initRecovery();
+        initPasswordToggles();
+        initEncryptionPort();
+        initFromSuggestion();
     }
 
     if (document.readyState === 'loading') {

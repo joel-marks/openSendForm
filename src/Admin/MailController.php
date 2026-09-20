@@ -9,8 +9,8 @@ use OpenSendForm\Auth\Csrf;
 use OpenSendForm\Auth\SessionInterface;
 use OpenSendForm\Config;
 use OpenSendForm\Install\ConfigWriter;
-use OpenSendForm\Mail\DeliverabilityChecker;
 use OpenSendForm\Mail\MailerInterface;
+use OpenSendForm\Mail\MailSettingsForm;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -62,9 +62,7 @@ final class MailController
             return self::redirect($response, '/admin/login');
         }
 
-        $selector = self::selectorFrom($request->getQueryParams());
-
-        return self::renderMail($c, $response, $selector);
+        return self::renderMail($c, $response);
     }
 
     // --- Save settings ----------------------------------------------------
@@ -80,12 +78,12 @@ final class MailController
 
         $data = self::formData($request);
         if (!self::csrf($c)->validate($data['_csrf'] ?? null)) {
-            return self::renderMail($c, $response, 'default', $data, 'Your session expired. Please try again.', 400);
+            return self::renderMail($c, $response, $data, 'Your session expired. Please try again.', 400);
         }
 
         $host = trim((string) ($data['smtp_host'] ?? ''));
         $port = trim((string) ($data['smtp_port'] ?? ''));
-        $encryption = self::normaliseEncryption((string) ($data['smtp_encryption'] ?? 'none'));
+        $encryption = MailSettingsForm::normaliseEncryption((string) ($data['smtp_encryption'] ?? 'none'));
         $user = trim((string) ($data['smtp_user'] ?? ''));
         $passwordInput = (string) ($data['smtp_pass'] ?? '');
         $fromAddress = trim((string) ($data['mail_from_address'] ?? ''));
@@ -229,15 +227,17 @@ final class MailController
     // --- Rendering --------------------------------------------------------
 
     /**
-     * Assemble the whole page: settings form values, the env-shadow notice, the
-     * enable-now offer and the live deliverability report.
+     * Assemble the page: settings form values, the env-shadow notice and the
+     * enable-now offer. On a brand-new setup (mail never configured) the form
+     * leads with SSL/TLS on port 465 — the most common working cPanel choice —
+     * rather than the shipped plaintext default. The SPF/DKIM/DMARC report has
+     * moved to its own DeliverabilityController.
      *
      * @param array<string, mixed> $data  Submitted values to preserve on error.
      */
     private static function renderMail(
         ContainerInterface $c,
         ResponseInterface $response,
-        string $selector,
         array $data = [],
         string $error = '',
         int $status = 200
@@ -250,16 +250,25 @@ final class MailController
         $useSubmitted = $data !== [];
         $fromAddress = $useSubmitted ? (string) ($data['mail_from_address'] ?? '') : $config->mailFromAddress();
 
-        $checker = self::checker($c);
-        $report = $checker->check($fromAddress, $adminEmail, $selector, $config->smtpHost());
+        // "Fresh" = mail has never been saved to the config file, so no stored
+        // SMTP choice exists to honour. Then we preselect the friendly default
+        // (SSL/TLS + 465) instead of the shipped none/25.
+        $fileValues = $writer->currentFileValues();
+        $mailConfigured = array_key_exists('SMTP_HOST', $fileValues) || array_key_exists('SMTP_ENCRYPTION', $fileValues);
+        $encryption = $useSubmitted
+            ? MailSettingsForm::normaliseEncryption((string) ($data['smtp_encryption'] ?? ''))
+            : ($mailConfigured ? $config->smtpEncryption() : MailSettingsForm::DEFAULT_ENCRYPTION);
+        $port = $useSubmitted
+            ? (string) ($data['smtp_port'] ?? '')
+            : ($mailConfigured ? (string) $config->smtpPort() : MailSettingsForm::defaultPortFor($encryption));
 
         $vars = [
             'title'          => 'Email',
             'error'          => $error,
             // Form field values (submitted-on-error take precedence; never the password).
-            'smtpHost'       => $useSubmitted ? (string) ($data['smtp_host'] ?? '') : $config->smtpHost(),
-            'smtpPort'       => $useSubmitted ? (string) ($data['smtp_port'] ?? '') : (string) $config->smtpPort(),
-            'smtpEncryption' => $useSubmitted ? self::normaliseEncryption((string) ($data['smtp_encryption'] ?? '')) : $config->smtpEncryption(),
+            'smtpHost'       => $useSubmitted ? (string) ($data['smtp_host'] ?? '') : ($mailConfigured ? $config->smtpHost() : ''),
+            'smtpPort'       => $port,
+            'smtpEncryption' => $encryption,
             'smtpUser'       => $useSubmitted ? (string) ($data['smtp_user'] ?? '') : $config->smtpUser(),
             'passwordSet'    => $config->smtpPass() !== '' || ($writer->fileValue('SMTP_PASS') ?? '') !== '',
             'fromAddress'    => $fromAddress,
@@ -269,9 +278,6 @@ final class MailController
             'shadowed'       => self::shadowedSettings($config, $writer),
             'offerEnable'    => !$config->mailEnabled() && self::session($c)->get(self::S_CAN_ENABLE) === true,
             'testRecipient'  => $adminEmail,
-            // Deliverability.
-            'report'         => $report,
-            'selector'       => $report['selector'],
         ];
 
         return AdminView::renderPage($c, $response, 'mail', $vars, 'mail', $status);
@@ -286,7 +292,7 @@ final class MailController
         array $data,
         string $message
     ): ResponseInterface {
-        return self::renderMail($c, $response, 'default', $data, $message, 422);
+        return self::renderMail($c, $response, $data, $message, 422);
     }
 
     /**
@@ -313,23 +319,6 @@ final class MailController
     }
 
     // --- Helpers ----------------------------------------------------------
-
-    /**
-     * @param array<string, mixed> $query
-     */
-    private static function selectorFrom(array $query): string
-    {
-        $selector = trim((string) ($query['dkim_selector'] ?? ''));
-
-        return $selector === '' ? 'default' : $selector;
-    }
-
-    private static function normaliseEncryption(string $value): string
-    {
-        $value = strtolower(trim($value));
-
-        return in_array($value, ['none', 'starttls', 'smtps'], true) ? $value : 'none';
-    }
 
     /**
      * Make a mailer/exception message safe to flash: collapse control
@@ -392,14 +381,6 @@ final class MailController
     {
         /** @var ConfigWriter $s */
         $s = $c->get(ConfigWriter::class);
-
-        return $s;
-    }
-
-    private static function checker(ContainerInterface $c): DeliverabilityChecker
-    {
-        /** @var DeliverabilityChecker $s */
-        $s = $c->get(DeliverabilityChecker::class);
 
         return $s;
     }

@@ -2159,3 +2159,89 @@ all-active form set.
   config-key absence; PHP_BINARY with documented fallback; which "Continue"
   button got the spacing). Out-of-scope items (Status tab, rebrand, etc.)
   untouched.
+
+## 2026-09-20 — Chrome / rhythm / onboarding (feature/chrome-rhythm-onboarding)
+Structural sprint following an operator walkthrough of onboarding-v2 that found
+two structural defects (spacing composed per page, not by components; the
+two-row header not a single enforced component — login had no header, one
+installer screen lost row 2) plus a UX verdict that the final onboarding steps
+conflated "installed" with "operational". Architect rulings were prescriptive
+and operator-approved.
+
+- **T1 One header component (`.osf-appbar`).** New `src/Admin/appbar.php`
+  (`appbar()`, loaded by TemplateRenderer beside helpers/icons) renders the
+  ENTIRE two-row header inside one `.osf-appbar` wrapper — row 1 the brand
+  surface (product name; Docs, theme toggle, and the account menu only where a
+  session exists), row 2 the tab strip — so it is structurally impossible to
+  render one row without the other. Variants by parameter, not separate markup:
+  `full` (admin, tabs + account menu) and `chrome-only` (login, installer,
+  SubmitHtmlPage, HTML error pages — no account menu; row 2 present but empty of
+  nav, keeping its shared surface + hairline via a new `.osf-tabnav-inner:empty
+  { min-height }`). The login "chrome-free" styling was REVERSED. Every layout
+  now renders its chrome through this one function: admin/layout, install/layout,
+  ErrorHandler and SubmitHtmlPage (the last two converted from bespoke inline
+  markup to the design system + appbar). `templates/admin/_nav.php` removed.
+  Browser titles are all `osf - {page name}` (layouts prefix `osf - `; login
+  title trimmed to "Sign in"; installer/error/submit set their own). New
+  AppbarTest walks admin routes + login + HTML error/submit asserting exactly
+  one `.osf-appbar` with both rows and the title; InstallerHttpTest gained the
+  same walk over every installer step; DesignSystemTest header/account tests
+  re-pointed at the component source.
+- **T2 Component-owned vertical rhythm.** admin.css block components now own
+  their vertical margins from the `--osf-space` scale: `.osf-actions` carries a
+  standard top margin (space-5) so no page hand-adds one (table-cell + toolbar
+  action groups pinned to `margin-top: 0`), and `.osf-table-wrap` owns its
+  trailing gap. The `.osf-step-actions` one-off margin was stripped — it now only
+  lays the stepper row out (`justify-content: flex-end`; a `.osf-step-skip`
+  child gets `margin-right: auto` so the secondary/skip sits left and the primary
+  right, a lone primary still right). Guard test (DesignSystemTest) forbids any
+  inline `style=` block-spacing (margin/padding/gap) in `templates/**` and
+  asserts admin.css owns the component margins. New non-CI
+  `tests/browser/rhythm-check.mjs` samples computed action-row `margin-top` in
+  real Firefox — verified 24px on the installer step row and an admin action row
+  in both themes.
+- **T3 Installer as an 8-step onboarding stepper.** Welcome → Requirements →
+  Database → Admin account → Email sending → Scheduled tasks → Bot protection →
+  Finish. Welcome (intro only) and Requirements (the hosting-check table, moved
+  off the old combined welcome) are now distinct steps. Each step shares the
+  shell: chrome-only appbar with the step name in row 2, a shared `_progress.php`
+  "Step N of 7" indicator, and one action row. The count is the SEVEN
+  configurable steps; Finish is the terminal page, outside the count. NEW
+  Scheduled tasks step: plain-language purpose of both cron jobs, the two
+  commands verbatim with runtime-derived absolute paths (new shared
+  `Install\CronCommands`), the cPanel recipe, and a recorded choice ("I've set
+  these up" / "I'll do this later") — no verification pretence. NEW Bot
+  protection step: a Turnstile signpost only (guide link + skip; commit posts
+  from here). Finish REPLACED Done as a status CHECKLIST (App installed / Email /
+  Scheduled tasks / Bot protection) built from what was PERSISTED at commit,
+  keeping the reinstall note and one "Go to your dashboard". New `CRON_SETUP`
+  config key ('' | done | later) + `Config::cronSetup()`; the cron block is
+  findable post-install in the admin Email tab (`/admin/mail#cron`) with a
+  `POST /admin/mail/cron-done` mark-set-up control; a dashboard reminder banner
+  shows while the choice is `later` and no monitor run has been observed
+  (new `MonitorRepository::hasAnyCheck()`), self-clearing on either signal. The
+  review-screen `finish.php` template was removed (commit stayed at
+  `POST /install/finish`, driven by the bot-protection step; there is no
+  `GET /install/finish`).
+- **T4 Small admin items.** Account `<details>` menu gained an external
+  "Reinstall app" link (→ /guides/reinstall, new-tab + noopener, styled like
+  Docs), landed with the appbar. New `bin/osf admin:list` — id, name, email,
+  active state, 2FA state; oldest first; metadata only — the companion to
+  admin:reset-2fa/admin:delete which take a raw id; usage text + notes updated.
+- Icons: added `rotate-ccw`, `clock`, `shield` to the vendored Lucide subset.
+- Tests: new AppbarTest, DashboardCronBannerTest, rhythm-check.mjs; extended
+  InstallerHttpTest (8-step walk, cron-confirm variant, appbar/title walk),
+  InstallerMailStepTest + WelcomeTemplateTest (now RequirementsTemplateTest in
+  spirit — renders the requirements step), MailWizardHttpTest (cron block +
+  markCronDone), CliAdminTest (admin:list), DesignSystemTest (rhythm guard,
+  appbar source, reinstall link, install table → requirements). Header
+  surface-check retuned: the six-tab strip now reaches ~60% width, so its
+  empty-surface samples moved past the strip. Test results: **OK — 614 tests,
+  3969 assertions, all green** (up from 600). Both non-CI Firefox checks pass in
+  both themes.
+- Deviations from prompt: none. Three interpretive decisions recorded in
+  QUESTIONS.md (chrome-only appbar keeps Docs + theme toggle on no-session pages;
+  "Step N of 7" counts the seven configurable steps with Finish terminal outside
+  it; the cron reminder self-clears on monitor_checks evidence). Out-of-scope
+  items (Status tab, rebrand, embed/osf.js, frozen JSON contract, tokens.css
+  VALUES) untouched.

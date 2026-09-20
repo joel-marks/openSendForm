@@ -328,3 +328,36 @@ decisions are recorded here for transparency, both non-blocking:
    emails the monitor sends DO carry the marker in their subject.) Flag if a
    subject-line marker on the delivered probe is required; it would need a
    small, careful `MessageBuilder` change. No blocker.
+
+4. **Chrome-only appbar keeps Docs + theme toggle on no-session pages —
+   decision recorded, non-blocking.** The ruling for the chrome-only variant
+   says "brand row as appropriate for no-session". Read for consistency ("ONE
+   header component everywhere; variants via parameters, not separate markup"),
+   the chrome-only row 1 keeps the same furniture as the full variant MINUS the
+   session-specific account menu — so login, the installer, the HTML submit page
+   and error pages all show the product name, the external Docs link and the
+   theme toggle. This means the public no-JS submit fallback (served on a form
+   visitor's navigation) now advertises OSF branding + a Docs link. Flag if the
+   truly public submit/error pages should instead show brand-only (no Docs, no
+   toggle); it is a one-line change in `appbar()`. No blocker.
+
+5. **"Step N of 7" — Finish is terminal, outside the count — decision
+   recorded, non-blocking.** The ruling said to count the steps the flow has
+   after the rework and decide whether Finish sits in or out, "be consistent,
+   note it." The flow has seven CONFIGURABLE steps (Welcome, Requirements,
+   Database, Admin account, Email sending, Scheduled tasks, Bot protection) plus
+   a terminal Finish checklist that is reached only after commit and carries no
+   forward action of its own. Finish is therefore OUTSIDE the count: every
+   configurable step reads "Step N of 7" and Finish shows no indicator. Flag if
+   Finish should read "Step 8 of 8"; trivial to change. No blocker.
+
+6. **Skipped-cron reminder self-clears on monitor_checks evidence only —
+   decision recorded, non-blocking.** The ruling allows clearing the dashboard
+   banner "when a monitor/retry run is observed to have executed
+   (monitor_checks/last-run evidence — use what exists, keep it simple)." A
+   monitor run leaves a row in `monitor_checks` (queried via the new
+   `MonitorRepository::hasAnyCheck()`), so the banner auto-clears once monitoring
+   has run at least once. A `mail:retry` run leaves NO durable table trace, so it
+   does not auto-clear the banner; the operator can still clear it explicitly via
+   "mark set up" in the Email tab. Flag if `mail:retry` execution should also
+   auto-clear it (would need a new last-run marker); no blocker.

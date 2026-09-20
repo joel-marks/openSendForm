@@ -183,7 +183,9 @@ final class DesignSystemTest extends TestCase
 
     public function testNavIsATopHeaderWithDocsLinkAndNoSidebar(): void
     {
-        $nav = self::read('templates/admin/_nav.php');
+        // The header markup now lives in the single shared component
+        // (src/Admin/appbar.php), not a per-area nav partial.
+        $nav = self::read('src/Admin/appbar.php');
 
         // Header bar shape (not a docs layout), plus the tab bar beneath it.
         self::assertStringContainsString('osf-header', $nav);
@@ -284,16 +286,13 @@ final class DesignSystemTest extends TestCase
             'The single hairline sits under the second (tab) row'
         );
 
-        // No surface between the two rows: they must be direct siblings in
-        // the markup (header closes, then the tab <nav> opens immediately),
-        // so no wrapper element could carry its own (possibly stale/raised)
-        // background between them.
-        $nav = self::read('templates/admin/_nav.php');
-        self::assertMatchesRegularExpression(
-            '/<\/header>\s*<nav class="osf-tabnav"/',
-            $nav,
-            'A wrapper between the header and the tab row could shadow the ruled surfaces'
-        );
+        // No surface between the two rows: the header closes and the tab <nav>
+        // opens immediately (the single .osf-appbar wrapper is the shared
+        // surface, not a raised one between them). Verified against the
+        // component source and — end to end — by AppbarTest on rendered pages.
+        $appbar = self::read('src/Admin/appbar.php');
+        self::assertStringContainsString('</div></header>', $appbar);
+        self::assertStringContainsString('<nav class="osf-tabnav"', $appbar);
 
         // No other rule in the stylesheet backgrounds .osf-header or
         // .osf-tabnav (e.g. a broader "header, nav" or wrapper selector) —
@@ -307,7 +306,7 @@ final class DesignSystemTest extends TestCase
     public function testHeaderAndTabBarSpanTheViewportWithColumnAlignedContent(): void
     {
         $css = self::read('public/assets/admin.css');
-        $nav = self::read('templates/admin/_nav.php');
+        $nav = self::read('src/Admin/appbar.php');
 
         // The bars themselves (.osf-header/.osf-tabnav) carry no max-width —
         // only their "-inner container" children are column-constrained.
@@ -337,7 +336,7 @@ final class DesignSystemTest extends TestCase
 
     public function testAccountMenuIsADetailsDropdownWithLogoutInsideIt(): void
     {
-        $nav = self::read('templates/admin/_nav.php');
+        $nav = self::read('src/Admin/appbar.php');
 
         // The admin name is a native <details>/<summary> dropdown (no JS
         // needed to open/close it, CSP-safe) rather than a plain link.

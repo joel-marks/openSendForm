@@ -143,6 +143,22 @@ main.container {
    single hairline under the second (tab) row only; no divider between
    them. -- */
 
+/* The single header component (src/Admin/appbar.php): ONE wrapper carrying
+   both rows. It paints the shared surface so the two rows are visually one
+   block; the rows keep their own matching surface too (defence in depth). */
+.osf-appbar {
+    background: var(--osf-bg-inset);
+}
+
+/* Row-2 step label (installer chrome-only variant): a muted caption sitting
+   where the tab strip would be, aligned to the same column. */
+.osf-appbar-step {
+    padding: var(--osf-space-1) var(--osf-space-1);
+    color: var(--osf-text-muted);
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
 .osf-header {
     background: var(--osf-bg-inset);
 }
@@ -280,6 +296,10 @@ main.container {
 .osf-tabnav-inner {
     display: flex;
     flex-wrap: wrap;           /* tabs wrap on narrow viewports */
+    align-items: center;
+    /* Keep the row's surface + hairline visible even when it holds no tabs
+       (the chrome-only variant on login/installer/error/submit pages). */
+    min-height: 2rem;
     gap: 0 var(--osf-space-4);
     background: transparent;   /* pinned: never shadow .osf-tabnav's surface */
 }

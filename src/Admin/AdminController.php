@@ -53,7 +53,7 @@ final class AdminController
         }
 
         return self::render($c, $response, 'login', [
-            'title' => 'Admin sign in',
+            'title' => 'Sign in',
             'csrf'  => self::csrf($c)->token(),
             'email' => '',
             'error' => '',
@@ -72,7 +72,7 @@ final class AdminController
 
         if (!self::csrf($c)->validate($data['_csrf'] ?? null)) {
             return self::render($c, $response, 'login', [
-                'title' => 'Admin sign in',
+                'title' => 'Sign in',
                 'csrf'  => self::csrf($c)->token(),
                 'email' => (string) ($data['email'] ?? ''),
                 'error' => 'Your session expired. Please try again.',
@@ -92,7 +92,7 @@ final class AdminController
                 return self::redirect($response, '/admin/totp');
             case LoginOutcome::RateLimited:
                 return self::render($c, $response, 'login', [
-                    'title' => 'Admin sign in',
+                    'title' => 'Sign in',
                     'csrf'  => self::csrf($c)->token(),
                     'email' => $email,
                     'error' => 'Too many attempts. Please try again later.',
@@ -102,7 +102,7 @@ final class AdminController
                 // Same message whether the email is unknown or the password
                 // is wrong — no user enumeration.
                 return self::render($c, $response, 'login', [
-                    'title' => 'Admin sign in',
+                    'title' => 'Sign in',
                     'csrf'  => self::csrf($c)->token(),
                     'email' => $email,
                     'error' => 'Invalid email or password.',

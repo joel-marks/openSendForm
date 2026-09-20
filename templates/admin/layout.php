@@ -1,5 +1,6 @@
 <?php use function OpenSendForm\Admin\h; ?>
 <?php use function OpenSendForm\Admin\asset; ?>
+<?php use function OpenSendForm\Admin\appbar; ?>
 <!DOCTYPE html>
 <html lang="en" data-palette="github">
 <head>
@@ -9,13 +10,24 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow">
-    <title><?= h($title ?? 'OpenSendForm admin') ?></title>
+    <title>osf - <?= h($title ?? 'Admin') ?></title>
     <link rel="stylesheet" href="<?= h(asset('/assets/tokens.css')) ?>">
     <link rel="stylesheet" href="<?= h(asset('/assets/admin.css')) ?>">
 </head>
 <body>
+<?php /* The ONE header component (src/Admin/appbar.php): both rows, one wrapper.
+         Signed-in screens get the full variant (tabs + account menu); the
+         pre-auth login/TOTP screens get the chrome-only variant — same header,
+         no session-specific items. There is no chrome-free page. */ ?>
 <?php if (($showNav ?? false) === true): ?>
-    <?php require __DIR__ . '/_nav.php'; ?>
+    <?= appbar([
+        'variant'   => 'full',
+        'active'    => $activeNav ?? '',
+        'adminName' => $adminName ?? '',
+        'csrf'      => $csrf ?? '',
+    ]) ?>
+<?php else: ?>
+    <?= appbar(['variant' => 'chrome-only']) ?>
 <?php endif; ?>
 <main class="container">
     <?php require __DIR__ . '/_flash.php'; ?>

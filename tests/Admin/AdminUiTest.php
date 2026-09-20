@@ -723,8 +723,10 @@ final class AdminUiTest extends TestCase
 
     public function testLayoutReferencesSelfHostedAssets(): void
     {
-        // The login page renders chrome-free (no top nav), so it carries no
-        // external Docs link — a clean check that every asset is self-hosted.
+        // The login page now wears the same chrome-only appbar as every other
+        // page (the chrome-free login was reversed). Its ASSETS must still all
+        // be self-hosted and versioned; the only external reference permitted is
+        // the header's Docs link (an <a>, never a stylesheet/script).
         $body = (string) $this->get('/admin/login')->getBody();
         $version = \OpenSendForm\Version::STRING;
         self::assertStringContainsString('/assets/tokens.css?v=' . $version, $body);
@@ -732,9 +734,18 @@ final class AdminUiTest extends TestCase
         self::assertStringContainsString('/assets/theme-init.js?v=' . $version, $body);
         self::assertStringContainsString('/assets/admin.js?v=' . $version, $body);
         self::assertStringNotContainsString('/assets/vendor/pico.min.css', $body);
-        // No CDN or external references on this chrome-free page.
-        self::assertStringNotContainsString('http://', str_replace('http-equiv', '', $body));
-        self::assertStringNotContainsString('https://', $body);
+
+        // No external stylesheet or script: every <link>/<script> asset URL is
+        // a same-origin /assets/ path, never an off-host http(s) URL.
+        preg_match_all('/<(?:link|script)\b[^>]*\b(?:href|src)="([^"]*)"/i', $body, $m);
+        self::assertNotEmpty($m[1]);
+        foreach ($m[1] as $url) {
+            self::assertStringStartsWith('/assets/', $url, "Non-self-hosted asset URL: {$url}");
+        }
+
+        // The chrome-only header carries the brand + Docs but NO account menu.
+        self::assertStringContainsString('class="osf-appbar"', $body);
+        self::assertStringNotContainsString('osf-account-menu', $body);
     }
 
     public function testTopNavRendersWithActiveLinkAndDocsLink(): void

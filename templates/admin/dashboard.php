@@ -82,6 +82,21 @@ use function OpenSendForm\Admin\icon;
     </div>
 <?php endif; ?>
 
+<?php if (($showCronBanner ?? false) === true): ?>
+    <?php /* Scheduled-tasks reminder: shown while the installer choice is still
+             "later" and no monitor run has been observed. Not session-dismissible
+             — it clears by marking the tasks set up in the Email tab (where the
+             commands live) or automatically once the monitor cron has run. */ ?>
+    <div class="osf-flash osf-flash--info osf-nudge" role="note">
+        <span>
+            <?= icon('clock') ?>
+            <strong>Scheduled tasks aren’t set up yet.</strong>
+            OpenSendForm needs two hourly cron jobs to monitor your forms and
+            retry failed emails. <a href="/admin/mail#cron">Set them up now</a>.
+        </span>
+    </div>
+<?php endif; ?>
+
 <?php /* Tone per card is decided in PHP (see statCardToneClass): a zero value
          is always info/blue; a non-zero value is success, except the two
          failure-measuring stats (Failed, Dead) which go danger. -subtle family

@@ -74,16 +74,23 @@ final class InstallerHttpTest extends TestCase
 
     public function testFullWizardInstallsAndAdminCanLogIn(): void
     {
-        // Step 1: welcome + requirements. In this environment nothing fails, so
-        // Continue links onward rather than being disabled.
+        // Step 1: welcome (intro only) → requirements.
         $welcome = $this->get('/install');
         self::assertSame(200, $welcome->getStatusCode());
         $welcomeBody = (string) $welcome->getBody();
-        self::assertStringContainsString('Hosting check', $welcomeBody);
-        self::assertStringContainsString('href="/install/database"', $welcomeBody);
-        self::assertStringNotContainsString('osf-disabled-link', $welcomeBody);
+        self::assertStringContainsString('set up OpenSendForm', $welcomeBody);
+        self::assertStringContainsString('href="/install/requirements"', $welcomeBody);
+        self::assertStringContainsString('Step 1 of 7', $welcomeBody);
 
-        // Step 2: choose the built-in SQLite database.
+        // Step 2: requirements. Nothing fails here, so Continue links onward.
+        $req = $this->get('/install/requirements');
+        self::assertSame(200, $req->getStatusCode());
+        $reqBody = (string) $req->getBody();
+        self::assertStringContainsString('Hosting check', $reqBody);
+        self::assertStringContainsString('href="/install/database"', $reqBody);
+        self::assertStringNotContainsString('osf-disabled-link', $reqBody);
+
+        // Step 3: choose the built-in SQLite database.
         $dbPage = $this->get('/install/database');
         self::assertSame(200, $dbPage->getStatusCode());
         $dbSubmit = $this->post('/install/database', [
@@ -93,7 +100,7 @@ final class InstallerHttpTest extends TestCase
         self::assertSame(302, $dbSubmit->getStatusCode());
         self::assertSame('/install/admin', $dbSubmit->getHeaderLine('Location'));
 
-        // Step 3: first admin.
+        // Step 4: first admin.
         $adminPage = $this->get('/install/admin');
         self::assertSame(200, $adminPage->getStatusCode());
         $adminSubmit = $this->post('/install/admin', [
@@ -106,7 +113,7 @@ final class InstallerHttpTest extends TestCase
         self::assertSame(302, $adminSubmit->getStatusCode());
         self::assertSame('/install/mail', $adminSubmit->getHeaderLine('Location'));
 
-        // Step 4: email sending — reachable, cPanel-guided, and skippable.
+        // Step 5: email sending — reachable, cPanel-guided, and skippable.
         $mailPage = $this->get('/install/mail');
         self::assertSame(200, $mailPage->getStatusCode());
         $mailBody = (string) $mailPage->getBody();
@@ -117,34 +124,52 @@ final class InstallerHttpTest extends TestCase
             'action' => 'skip',
         ]);
         self::assertSame(302, $mailSkip->getStatusCode());
-        self::assertSame('/install/finish', $mailSkip->getHeaderLine('Location'));
+        self::assertSame('/install/scheduled', $mailSkip->getHeaderLine('Location'));
 
-        // Step 5: review + commit.
-        $finishPage = $this->get('/install/finish');
-        self::assertSame(200, $finishPage->getStatusCode());
-        self::assertStringContainsString('Built-in database', (string) $finishPage->getBody());
+        // Step 6: scheduled tasks — the two cron commands + cPanel recipe; defer.
+        $sched = $this->get('/install/scheduled');
+        self::assertSame(200, $sched->getStatusCode());
+        $schedBody = (string) $sched->getBody();
+        self::assertStringContainsString('monitor:run', $schedBody);
+        self::assertStringContainsString('mail:retry', $schedBody);
+        self::assertStringContainsString('Cron Jobs', $schedBody);
+        $schedSubmit = $this->post('/install/scheduled', [
+            '_csrf'  => $this->csrfFrom($sched),
+            'action' => 'later',
+        ]);
+        self::assertSame(302, $schedSubmit->getStatusCode());
+        self::assertSame('/install/bot-protection', $schedSubmit->getHeaderLine('Location'));
 
-        $finishSubmit = $this->post('/install/finish', ['_csrf' => $this->csrfFrom($finishPage)]);
-        self::assertSame(302, $finishSubmit->getStatusCode());
-        self::assertSame('/install/done', $finishSubmit->getHeaderLine('Location'));
+        // Step 7: bot protection — Turnstile signpost, then commit.
+        $bot = $this->get('/install/bot-protection');
+        self::assertSame(200, $bot->getStatusCode());
+        $botBody = (string) $bot->getBody();
+        self::assertStringContainsString('Turnstile', $botBody);
+        self::assertStringContainsString('/guides/turnstile', $botBody);
 
-        // Step 6: success screen and, on disk, an installed app.
+        $commit = $this->post('/install/finish', ['_csrf' => $this->csrfFrom($bot)]);
+        self::assertSame(302, $commit->getStatusCode());
+        self::assertSame('/install/done', $commit->getHeaderLine('Location'));
+
+        // Terminal: the Finish checklist and, on disk, an installed app.
         $done = $this->get('/install/done');
         self::assertSame(200, $done->getStatusCode());
-        self::assertStringContainsString('installed', (string) $done->getBody());
-        // The scheduled-tasks section prints the two cron commands verbatim.
-        self::assertStringContainsString('monitor:run', (string) $done->getBody());
-        self::assertStringContainsString('mail:retry', (string) $done->getBody());
-        self::assertStringContainsString('Cron Jobs', (string) $done->getBody());
-        // Reinstall guidance replaces the old "turn on email next" copy.
-        self::assertStringContainsString('/guides/reinstall', (string) $done->getBody());
+        $doneBody = (string) $done->getBody();
+        self::assertStringContainsString('installed', $doneBody);
+        // A status checklist: scheduled tasks pending (chose "later"), email skipped.
+        self::assertStringContainsString('Scheduled tasks', $doneBody);
+        self::assertStringContainsString('Pending', $doneBody);
+        self::assertStringContainsString('Go to your dashboard', $doneBody);
+        // Reinstall guidance is retained.
+        self::assertStringContainsString('/guides/reinstall', $doneBody);
 
         self::assertTrue($this->paths->isInstalled());
 
-        // Config written with a real 64-hex secret and mail off.
+        // Config written with a real 64-hex secret, mail off, cron deferred.
         $loaded = Config::fromFile($this->paths->configPath);
         self::assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $loaded->appSecret());
         self::assertFalse($loaded->mailEnabled());
+        self::assertSame('later', $loaded->cronSetup());
 
         // The installer routes are now closed; the app is reachable.
         self::assertSame(404, $this->get('/install')->getStatusCode());
@@ -163,7 +188,8 @@ final class InstallerHttpTest extends TestCase
 
     public function testCommitDestroysAnyPreInstallSession(): void
     {
-        // Drive the wizard up to the review screen.
+        // Drive the wizard up to the final (bot-protection) step, from which the
+        // commit is posted.
         $dbPage = $this->get('/install/database');
         $this->post('/install/database', [
             '_csrf'     => $this->csrfFrom($dbPage),
@@ -177,7 +203,9 @@ final class InstallerHttpTest extends TestCase
             'password'         => self::ADMIN_PASSWORD,
             'password_confirm' => self::ADMIN_PASSWORD,
         ]);
-        $finishPage = $this->get('/install/finish');
+        $this->post('/install/mail', ['_csrf' => $this->csrfFrom($this->get('/install/mail')), 'action' => 'skip']);
+        $this->post('/install/scheduled', ['_csrf' => $this->csrfFrom($this->get('/install/scheduled')), 'action' => 'later']);
+        $botPage = $this->get('/install/bot-protection');
 
         // Seed state that existed in the browser's session BEFORE the app was
         // installed — a stray admin login and an arbitrary key that must not
@@ -186,7 +214,7 @@ final class InstallerHttpTest extends TestCase
         $this->session->set('pre_install_marker', 'leftover');
         $destroysBefore = $this->session->destroyCount();
 
-        $finishSubmit = $this->post('/install/finish', ['_csrf' => $this->csrfFrom($finishPage)]);
+        $finishSubmit = $this->post('/install/finish', ['_csrf' => $this->csrfFrom($botPage)]);
         self::assertSame(302, $finishSubmit->getStatusCode());
         self::assertSame('/install/done', $finishSubmit->getHeaderLine('Location'));
 
@@ -205,6 +233,65 @@ final class InstallerHttpTest extends TestCase
         self::assertStringContainsString('installed', (string) $done->getBody());
     }
 
+    public function testConfirmingCronRecordsItAndFinishReportsSetUp(): void
+    {
+        $this->driveToScheduledStep();
+
+        // Choose "I've set these up".
+        $schedSubmit = $this->post('/install/scheduled', [
+            '_csrf'  => $this->csrfFrom($this->get('/install/scheduled')),
+            'action' => 'done',
+        ]);
+        self::assertSame('/install/bot-protection', $schedSubmit->getHeaderLine('Location'));
+
+        $bot = $this->get('/install/bot-protection');
+        $this->post('/install/finish', ['_csrf' => $this->csrfFrom($bot)]);
+
+        // Persisted as done, and the Finish checklist reports it.
+        self::assertSame('done', Config::fromFile($this->paths->configPath)->cronSetup());
+        $doneBody = (string) $this->get('/install/done')->getBody();
+        self::assertStringContainsString('Set up', $doneBody);
+        self::assertStringNotContainsString('Pending', $doneBody);
+    }
+
+    // --- The single header component on every installer step (Task 1) ------
+
+    public function testEveryInstallerStepHasOneChromeOnlyAppbarAndTitle(): void
+    {
+        // Drive db + admin so the later step GETs are reachable.
+        $dbPage = $this->get('/install/database');
+        $this->post('/install/database', ['_csrf' => $this->csrfFrom($dbPage), 'db_driver' => 'sqlite']);
+        $adminPage = $this->get('/install/admin');
+        $this->post('/install/admin', [
+            '_csrf'            => $this->csrfFrom($adminPage),
+            'name'             => 'The Boss',
+            'email'            => self::ADMIN_EMAIL,
+            'password'         => self::ADMIN_PASSWORD,
+            'password_confirm' => self::ADMIN_PASSWORD,
+        ]);
+
+        $expectedTitles = [
+            '/install'                => 'Welcome',
+            '/install/requirements'   => 'Requirements',
+            '/install/database'       => 'Database',
+            '/install/admin'          => 'Admin account',
+            '/install/mail'           => 'Email sending',
+            '/install/scheduled'      => 'Scheduled tasks',
+            '/install/bot-protection' => 'Bot protection',
+        ];
+
+        foreach ($expectedTitles as $route => $pageName) {
+            $body = (string) $this->get($route)->getBody();
+            self::assertSame(1, substr_count($body, 'class="osf-appbar"'), "{$route}: one .osf-appbar");
+            self::assertStringContainsString('<header class="osf-header"', $body, "{$route}: brand row");
+            self::assertStringContainsString('<nav class="osf-tabnav"', $body, "{$route}: tab row");
+            // Chrome-only: no tab strip, no account menu.
+            self::assertStringNotContainsString('osf-tab-link', $body, "{$route}: chrome-only (no tabs)");
+            self::assertStringNotContainsString('osf-account-menu', $body, "{$route}: chrome-only (no account menu)");
+            self::assertStringContainsString('<title>osf - ' . $pageName . '</title>', $body, "{$route}: title");
+        }
+    }
+
     // --- Step-order enforcement -------------------------------------------
 
     public function testJumpingToAdminWithoutDatabaseRedirectsBack(): void
@@ -214,16 +301,17 @@ final class InstallerHttpTest extends TestCase
         self::assertSame('/install/database', $response->getHeaderLine('Location'));
     }
 
-    public function testJumpingToFinishWithoutAdminRedirectsBack(): void
+    public function testJumpingPastAdminRedirectsBack(): void
     {
-        // Complete the DB step only, then try to skip to finish.
+        // Complete the DB step only, then try to skip ahead to a step that
+        // requires the admin to exist (scheduled tasks).
         $dbPage = $this->get('/install/database');
         $this->post('/install/database', [
             '_csrf'     => $this->csrfFrom($dbPage),
             'db_driver' => 'sqlite',
         ]);
 
-        $response = $this->get('/install/finish');
+        $response = $this->get('/install/scheduled');
         self::assertSame(302, $response->getStatusCode());
         self::assertSame('/install/admin', $response->getHeaderLine('Location'));
     }
@@ -389,6 +477,22 @@ final class InstallerHttpTest extends TestCase
     }
 
     // --- Helpers ----------------------------------------------------------
+
+    /** Drive db + admin + mail-skip so the flow is at the scheduled-tasks step. */
+    private function driveToScheduledStep(): void
+    {
+        $dbPage = $this->get('/install/database');
+        $this->post('/install/database', ['_csrf' => $this->csrfFrom($dbPage), 'db_driver' => 'sqlite']);
+        $adminPage = $this->get('/install/admin');
+        $this->post('/install/admin', [
+            '_csrf'            => $this->csrfFrom($adminPage),
+            'name'             => 'The Boss',
+            'email'            => self::ADMIN_EMAIL,
+            'password'         => self::ADMIN_PASSWORD,
+            'password_confirm' => self::ADMIN_PASSWORD,
+        ]);
+        $this->post('/install/mail', ['_csrf' => $this->csrfFrom($this->get('/install/mail')), 'action' => 'skip']);
+    }
 
     private function get(string $path): ResponseInterface
     {

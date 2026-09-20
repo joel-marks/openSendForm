@@ -266,6 +266,13 @@ final class Config
             'MONITOR_ALERT_EMAIL'        => '',
             // The base URL the monitor drives its real HTTP submissions against.
             'MONITOR_BASE_URL'           => 'http://localhost:8080',
+
+            // Scheduled-tasks (cron) setup state, recorded by the installer's
+            // Scheduled tasks step. '' = unknown (legacy installs / never asked);
+            // 'done' = the operator confirmed the two cron jobs are set up;
+            // 'later' = they chose to do it afterwards (drives the dashboard
+            // reminder banner until confirmed or until a monitor run is seen).
+            'CRON_SETUP'                 => '',
         ];
     }
 
@@ -573,6 +580,16 @@ final class Config
     public function monitorBaseUrl(): string
     {
         return rtrim(trim($this->get('MONITOR_BASE_URL')), '/');
+    }
+
+    /**
+     * The scheduled-tasks (cron) setup state: '' (unknown), 'done' (confirmed
+     * set up) or 'later' (deferred). Recorded by the installer's Scheduled
+     * tasks step and updated from the admin Email tab.
+     */
+    public function cronSetup(): string
+    {
+        return trim($this->get('CRON_SETUP'));
     }
 
     /**

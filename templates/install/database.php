@@ -12,6 +12,7 @@ use function OpenSendForm\Admin\h;
  */
 $driver = $driver === 'mysql' ? 'mysql' : 'sqlite';
 ?>
+<?php require __DIR__ . '/_progress.php'; ?>
 <h1>Where should submissions be stored?</h1>
 
 <p>

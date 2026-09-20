@@ -9,6 +9,7 @@ use function OpenSendForm\Admin\h;
  * @var string $name
  */
 ?>
+<?php require __DIR__ . '/_progress.php'; ?>
 <h1>Create your administrator account</h1>
 
 <p>

@@ -39,6 +39,18 @@ final class MonitorRepository
     }
 
     /**
+     * Whether ANY synthetic check has ever been recorded — evidence that the
+     * monitor cron has actually run at least once. Used to auto-clear the
+     * dashboard's "scheduled tasks not set up" reminder.
+     */
+    public function hasAnyCheck(): bool
+    {
+        $row = $this->db->fetchOne('SELECT COUNT(*) AS c FROM monitor_checks');
+
+        return (int) ($row['c'] ?? 0) > 0;
+    }
+
+    /**
      * The most recent check for a form, or null when it has never been checked.
      * Ordered by id (monotonic) so ties on checked_at are broken deterministically.
      *

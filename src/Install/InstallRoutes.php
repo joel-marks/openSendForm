@@ -32,13 +32,18 @@ final class InstallRoutes
 
         $app->group('/install', function (RouteCollectorProxy $group) use ($container): void {
             $group->get('', self::handler($container, [InstallController::class, 'welcome']));
+            $group->get('/requirements', self::handler($container, [InstallController::class, 'requirementsForm']));
             $group->get('/database', self::handler($container, [InstallController::class, 'databaseForm']));
             $group->post('/database', self::handler($container, [InstallController::class, 'database']));
             $group->get('/admin', self::handler($container, [InstallController::class, 'adminForm']));
             $group->post('/admin', self::handler($container, [InstallController::class, 'admin']));
             $group->get('/mail', self::handler($container, [InstallController::class, 'mailForm']));
             $group->post('/mail', self::handler($container, [InstallController::class, 'mail']));
-            $group->get('/finish', self::handler($container, [InstallController::class, 'finishForm']));
+            $group->get('/scheduled', self::handler($container, [InstallController::class, 'scheduledForm']));
+            $group->post('/scheduled', self::handler($container, [InstallController::class, 'scheduled']));
+            $group->get('/bot-protection', self::handler($container, [InstallController::class, 'botProtectionForm']));
+            // The commit action: the Bot protection step posts here. There is no
+            // GET /finish — the terminal Finish checklist lives at /done.
             $group->post('/finish', self::handler($container, [InstallController::class, 'finish']));
             $group->get('/done', self::handler($container, [InstallController::class, 'done']));
         })->add(new SecurityHeadersMiddleware());

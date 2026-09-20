@@ -364,7 +364,7 @@ final class DesignSystemTest extends TestCase
             'templates/admin/forms_list.php',
             'templates/admin/submissions.php',
             'templates/admin/admins.php',
-            'templates/install/welcome.php',
+            'templates/install/requirements.php',
         ];
 
         foreach ($tableTemplates as $tpl) {

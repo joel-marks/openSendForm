@@ -20,6 +20,7 @@ use function OpenSendForm\Admin\h;
  * @var string $testRecipient
  */
 ?>
+<?php require __DIR__ . '/_progress.php'; ?>
 <h1>Set up email sending</h1>
 
 <p>
@@ -59,9 +60,9 @@ use function OpenSendForm\Admin\h;
     </div>
 
     <div class="osf-actions osf-step-actions">
-        <button type="submit" name="action" value="save">Save and continue</button>
+        <button type="submit" name="action" value="skip" class="secondary outline osf-step-skip" formnovalidate>Skip for now</button>
         <button type="submit" name="action" value="test" class="secondary">Send test email</button>
-        <button type="submit" name="action" value="skip" class="secondary outline" formnovalidate>Skip for now</button>
+        <button type="submit" name="action" value="save">Save and continue</button>
     </div>
     <p><small>Skipping leaves email off: submissions will be stored but not
         emailed until you set this up from the admin panel.</small></p>

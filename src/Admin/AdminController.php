@@ -251,9 +251,15 @@ final class AdminController
 
         // Synthetic-monitoring banner: forms whose LATEST check failed. Shown
         // until a later passing check clears them (state lives in monitor_checks).
-        $monitorFailures = $schemaCurrent
-            ? (new \OpenSendForm\Monitor\MonitorRepository($db))->failingForms()
-            : [];
+        $monitorRepo = new \OpenSendForm\Monitor\MonitorRepository($db);
+        $monitorFailures = $schemaCurrent ? $monitorRepo->failingForms() : [];
+
+        // Scheduled-tasks reminder: shown while the installer choice is still
+        // "later" AND no monitor run has been observed yet. A recorded monitor
+        // check is evidence the cron is actually running, so it self-clears; the
+        // admin can also clear it by marking the tasks done in the Email tab.
+        $monitorHasRun = $schemaCurrent && $monitorRepo->hasAnyCheck();
+        $showCronBanner = self::config($c)->cronSetup() === 'later' && !$monitorHasRun;
 
         return AdminView::renderPage($c, $response, 'dashboard', [
             'title'        => 'Dashboard',
@@ -264,6 +270,7 @@ final class AdminController
             // Mirror the 2FA nudge for email: shown while sending is off and the
             // admin has not dismissed it this session.
             'showMailNudge' => !$mailEnabled && !$mailNudgeDismissed,
+            'showCronBanner' => $showCronBanner,
             'pendingMigrations' => $pendingMigrations,
             'activeForms'  => $forms->countActive(),
             'todayCount'   => $schemaCurrent ? $submissions->countSince($todayStart) : 0,

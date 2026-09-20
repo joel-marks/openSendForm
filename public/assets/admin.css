@@ -532,6 +532,17 @@ td .osf-actions,
     margin-top: 0;
 }
 
+/* Installer "Step N of 7" progress indicator: a small uppercase eyebrow above
+   the step title. */
+.osf-step-progress {
+    margin: 0 0 var(--osf-space-2);
+    color: var(--osf-text-muted);
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
 /* The installer/stepper action row: primary right, secondary/skip left, in
    identical placement on every step. The top gap comes from .osf-actions
    above (single source); this only lays the row out. */

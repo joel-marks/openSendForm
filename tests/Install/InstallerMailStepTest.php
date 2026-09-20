@@ -78,7 +78,7 @@ final class InstallerMailStepTest extends TestCase
         $mailPage = $this->get('/install/mail');
         $skip = $this->post('/install/mail', ['_csrf' => $this->csrfFrom($mailPage), 'action' => 'skip']);
         self::assertSame(302, $skip->getStatusCode());
-        self::assertSame('/install/finish', $skip->getHeaderLine('Location'));
+        self::assertSame('/install/scheduled', $skip->getHeaderLine('Location'));
 
         $this->commit();
         $loaded = Config::fromFile($this->paths->configPath);
@@ -102,7 +102,7 @@ final class InstallerMailStepTest extends TestCase
             'mail_from_name'    => 'Example Forms',
         ]);
         self::assertSame(302, $save->getStatusCode());
-        self::assertSame('/install/finish', $save->getHeaderLine('Location'));
+        self::assertSame('/install/scheduled', $save->getHeaderLine('Location'));
 
         $this->commit();
         $text = (string) file_get_contents($this->paths->configPath);
@@ -159,9 +159,12 @@ final class InstallerMailStepTest extends TestCase
         $mailPage = $this->get('/install/mail');
         $this->post('/install/mail', ['_csrf' => $this->csrfFrom($mailPage), 'action' => 'skip']);
 
-        // Commit via a request that carries a real scheme + host.
-        $finishPage = $this->get('/install/finish');
-        $csrf = $this->csrfFrom($finishPage);
+        // Advance through the scheduled-tasks and bot-protection steps, then
+        // commit via a request that carries a real scheme + host.
+        $sched = $this->get('/install/scheduled');
+        $this->post('/install/scheduled', ['_csrf' => $this->csrfFrom($sched), 'action' => 'later']);
+        $botPage = $this->get('/install/bot-protection');
+        $csrf = $this->csrfFrom($botPage);
         $request = (new ServerRequestFactory())
             ->createServerRequest('POST', 'https://forms.example.com/install/finish', ['REMOTE_ADDR' => '203.0.113.5'])
             ->withParsedBody(['_csrf' => $csrf]);
@@ -190,8 +193,12 @@ final class InstallerMailStepTest extends TestCase
 
     private function commit(): void
     {
-        $finishPage = $this->get('/install/finish');
-        $this->post('/install/finish', ['_csrf' => $this->csrfFrom($finishPage)]);
+        // From the email step: record the scheduled-tasks choice, pass the
+        // bot-protection signpost, then commit at the terminal Finish action.
+        $sched = $this->get('/install/scheduled');
+        $this->post('/install/scheduled', ['_csrf' => $this->csrfFrom($sched), 'action' => 'later']);
+        $botPage = $this->get('/install/bot-protection');
+        $this->post('/install/finish', ['_csrf' => $this->csrfFrom($botPage)]);
     }
 
     private function get(string $path): ResponseInterface

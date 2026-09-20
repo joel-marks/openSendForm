@@ -7,10 +7,14 @@ namespace OpenSendForm\Install;
 use OpenSendForm\Admin\TemplateRenderer;
 use OpenSendForm\Auth\Csrf;
 use OpenSendForm\Auth\SessionInterface;
+use OpenSendForm\Config;
+use OpenSendForm\Mail\MailerFactory;
+use OpenSendForm\Mail\MailSettingsForm;
 use OpenSendForm\Version;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
+use Throwable;
 
 /**
  * The browser installer, written for a non-technical person who has just
@@ -34,6 +38,8 @@ final class InstallController
     private const S_DB = 'install.db';
     /** Session key: the first admin has been created. */
     private const S_ADMIN = 'install.admin_created';
+    /** Session key: the SMTP settings chosen at the (skippable) email step. */
+    private const S_MAIL = 'install.mail';
     /** Session key: the install committed (config + lock written). */
     private const S_DONE = 'install.completed';
 
@@ -161,10 +167,103 @@ final class InstallController
 
         self::session($c)->set(self::S_ADMIN, true);
 
+        return self::redirect($response, '/install/mail');
+    }
+
+    // --- Step 4: email sending (skippable) --------------------------------
+
+    public static function mailForm(
+        ContainerInterface $c,
+        ServerRequestInterface $request,
+        ResponseInterface $response
+    ): ResponseInterface {
+        if (($guard = self::guardNotInstalled($c, $response)) !== null) {
+            return $guard;
+        }
+        if (($jump = self::enforceOrder($c, $response, needsDb: true, needsAdmin: true)) !== null) {
+            return $jump;
+        }
+
+        return self::renderMailStep($c, $response);
+    }
+
+    public static function mail(
+        ContainerInterface $c,
+        ServerRequestInterface $request,
+        ResponseInterface $response
+    ): ResponseInterface {
+        if (($guard = self::guardNotInstalled($c, $response)) !== null) {
+            return $guard;
+        }
+        if (($jump = self::enforceOrder($c, $response, needsDb: true, needsAdmin: true)) !== null) {
+            return $jump;
+        }
+
+        $data = self::formData($request);
+        if (!self::csrf($c)->validate($data['_csrf'] ?? null)) {
+            return self::renderMailStep($c, $response, $data, 'Your session expired. Please try again.', 400);
+        }
+
+        $action = (string) ($data['action'] ?? 'save');
+
+        // Skip: leave email off. Submissions are stored but not emailed until
+        // it is set up later from the admin panel.
+        if ($action === 'skip') {
+            self::session($c)->remove(self::S_MAIL);
+
+            return self::redirect($response, '/install/finish');
+        }
+
+        // Validate the SMTP details (same rules as the admin Email page).
+        $host = trim((string) ($data['smtp_host'] ?? ''));
+        $port = trim((string) ($data['smtp_port'] ?? ''));
+        $encryption = MailSettingsForm::normaliseEncryption((string) ($data['smtp_encryption'] ?? ''));
+        $user = trim((string) ($data['smtp_user'] ?? ''));
+        $password = (string) ($data['smtp_pass'] ?? '');
+        $fromAddress = trim((string) ($data['mail_from_address'] ?? ''));
+        $fromName = trim((string) ($data['mail_from_name'] ?? ''));
+
+        if ($host === '') {
+            return self::renderMailStep($c, $response, $data, 'Enter your SMTP host, or choose “Skip for now”.', 422);
+        }
+        if ($port === '' || !ctype_digit($port) || (int) $port < 1 || (int) $port > 65535) {
+            return self::renderMailStep($c, $response, $data, 'Please enter a port number between 1 and 65535 (usually 587 or 465).', 422);
+        }
+        if (filter_var($fromAddress, FILTER_VALIDATE_EMAIL) === false) {
+            return self::renderMailStep($c, $response, $data, 'Please enter a valid From address (e.g. hello@yourdomain.com).', 422);
+        }
+        if ($fromName === '') {
+            return self::renderMailStep($c, $response, $data, 'Please enter a From name (what recipients see as the sender).', 422);
+        }
+
+        $changes = [
+            'SMTP_HOST'         => $host,
+            'SMTP_PORT'         => $port,
+            'SMTP_ENCRYPTION'   => $encryption,
+            'SMTP_USER'         => $user,
+            'MAIL_FROM_ADDRESS' => $fromAddress,
+            'MAIL_FROM_NAME'    => $fromName,
+            'MAIL_ENABLED'      => '1',
+        ];
+        if ($password !== '') {
+            $changes['SMTP_PASS'] = $password;
+        }
+
+        // A test send: build a mailer from the just-typed settings and send one
+        // message, without leaving the step (the settings are kept so the
+        // fields survive the round trip).
+        if ($action === 'test') {
+            self::sendInstallTest($c, $changes, $data);
+
+            return self::renderMailStep($c, $response, $data);
+        }
+
+        self::session($c)->set(self::S_MAIL, $changes);
+
         return self::redirect($response, '/install/finish');
     }
 
-    // --- Step 4: finish (review + commit) ---------------------------------
+    // --- Step 5: finish (review + commit) ---------------------------------
 
     public static function finishForm(
         ContainerInterface $c,
@@ -180,11 +279,17 @@ final class InstallController
 
         /** @var array{summary:string} $dbConfig */
         $dbConfig = self::session($c)->get(self::S_DB);
+        $mail = self::session($c)->get(self::S_MAIL);
+        $mailConfigured = is_array($mail);
 
         return self::render($c, $response, 'finish', [
-            'title'      => 'Finish setup',
-            'dbSummary'  => (string) ($dbConfig['summary'] ?? ''),
-            'csrf'       => self::csrf($c)->token(),
+            'title'          => 'Finish setup',
+            'dbSummary'      => (string) ($dbConfig['summary'] ?? ''),
+            'mailConfigured' => $mailConfigured,
+            'mailSummary'    => $mailConfigured
+                ? 'sending via ' . (string) ($mail['SMTP_HOST'] ?? '') . ', from ' . (string) ($mail['MAIL_FROM_ADDRESS'] ?? '')
+                : '',
+            'csrf'           => self::csrf($c)->token(),
         ]);
     }
 
@@ -210,8 +315,22 @@ final class InstallController
         /** @var array{driver:string,dsn:string,user:string,pass:string,summary:string} $dbConfig */
         $dbConfig = self::session($c)->get(self::S_DB);
 
+        // Gather the wizard's extra settings: the email step's SMTP details (when
+        // it wasn't skipped) plus MONITOR_BASE_URL captured from THIS request's
+        // scheme+host, so the synthetic monitor's cron works with no manual
+        // config edit. An environment variable still overrides it at load time.
+        $extra = [];
+        $mail = self::session($c)->get(self::S_MAIL);
+        if (is_array($mail)) {
+            $extra = $mail;
+        }
+        $baseUrl = self::requestBaseUrl($request);
+        if ($baseUrl !== '') {
+            $extra['MONITOR_BASE_URL'] = $baseUrl;
+        }
+
         try {
-            self::installer($c)->commit($dbConfig);
+            self::installer($c)->commit($dbConfig, $extra);
         } catch (InstallerException $e) {
             self::flash($c, $e->getMessage());
 
@@ -234,7 +353,7 @@ final class InstallController
         return self::redirect($response, '/install/done');
     }
 
-    // --- Step 5: done -----------------------------------------------------
+    // --- Step 6: done -----------------------------------------------------
 
     public static function done(
         ContainerInterface $c,
@@ -249,10 +368,42 @@ final class InstallController
             return self::redirect($response, $target);
         }
 
+        // The two cron commands, verbatim and copy-paste ready, with the real
+        // absolute paths baked in: the PHP CLI binary (PHP_BINARY, with the
+        // common cPanel fallback noted in the template) and this install's own
+        // bin/osf, derived from the app's own location at runtime.
+        $php = self::phpBinary();
+        $osf = self::installRoot() . '/bin/osf';
+
         return self::render($c, $response, 'done', [
-            'title'   => 'OpenSendForm is installed',
-            'version' => Version::STRING,
+            'title'         => 'OpenSendForm is installed',
+            'version'       => Version::STRING,
+            'phpBinary'     => $php,
+            'monitorCmd'    => $php . ' ' . $osf . ' monitor:run',
+            'retryCmd'      => $php . ' ' . $osf . ' mail:retry',
         ]);
+    }
+
+    /**
+     * The PHP CLI binary to bake into the cron commands: PHP_BINARY when the
+     * SAPI gives us one, else the common cPanel CLI path. The template still
+     * notes the fallback in case the baked value is a web SAPI binary.
+     */
+    private static function phpBinary(): string
+    {
+        $binary = defined('PHP_BINARY') ? PHP_BINARY : '';
+
+        return $binary !== '' ? $binary : '/usr/local/bin/php';
+    }
+
+    /**
+     * The installation's root directory, derived from this file's own location
+     * (src/Install/), so the cron paths point at wherever the app was extracted
+     * without any manual entry.
+     */
+    private static function installRoot(): string
+    {
+        return dirname(__DIR__, 2);
     }
 
     // --- Rendering helpers ------------------------------------------------
@@ -299,6 +450,114 @@ final class InstallController
             'email'             => (string) ($data['email'] ?? ''),
             'name'              => (string) ($data['name'] ?? ''),
         ], $status);
+    }
+
+    /**
+     * The skippable email step. A fresh setup leads with SSL/TLS on port 465
+     * (the friendliest common cPanel choice); submitted values are preserved on
+     * a re-render, and the password is never echoed back.
+     *
+     * @param array<string, mixed> $data
+     */
+    private static function renderMailStep(
+        ContainerInterface $c,
+        ResponseInterface $response,
+        array $data = [],
+        string $error = '',
+        int $status = 200
+    ): ResponseInterface {
+        $useSubmitted = $data !== [];
+        $encryption = $useSubmitted
+            ? MailSettingsForm::normaliseEncryption((string) ($data['smtp_encryption'] ?? ''))
+            : MailSettingsForm::DEFAULT_ENCRYPTION;
+        $port = $useSubmitted
+            ? (string) ($data['smtp_port'] ?? '')
+            : MailSettingsForm::defaultPortFor($encryption);
+
+        return self::render($c, $response, 'mail', [
+            'title'          => 'Email sending',
+            'csrf'           => self::csrf($c)->token(),
+            'error'          => $error,
+            // Shared SMTP-fields partial variables (never echo the password).
+            'smtpHost'       => (string) ($data['smtp_host'] ?? ''),
+            'smtpPort'       => $port,
+            'smtpEncryption' => $encryption,
+            'smtpUser'       => (string) ($data['smtp_user'] ?? ''),
+            'passwordSet'    => false,
+            'fromAddress'    => (string) ($data['mail_from_address'] ?? ''),
+            'fromName'       => (string) ($data['mail_from_name'] ?? ''),
+            'passwordError'  => $error !== '',
+            'testRecipient'  => (string) ($data['test_recipient'] ?? ($data['mail_from_address'] ?? '')),
+        ], $status);
+    }
+
+    /**
+     * Send a test email using the just-typed SMTP settings, without persisting
+     * anything. Queues a plain-language flash for the re-rendered step. Any
+     * failure is caught and surfaced as a friendly, sanitised notice.
+     *
+     * @param array<string, string> $changes The assembled SMTP config changes.
+     * @param array<string, mixed>  $data    The raw posted data (for the recipient).
+     */
+    private static function sendInstallTest(ContainerInterface $c, array $changes, array $data): void
+    {
+        $to = trim((string) ($data['test_recipient'] ?? ''));
+        if ($to === '') {
+            $to = (string) ($changes['MAIL_FROM_ADDRESS'] ?? '');
+        }
+        if (filter_var($to, FILTER_VALIDATE_EMAIL) === false) {
+            self::flash($c, 'Enter a valid email address to send the test to.');
+
+            return;
+        }
+
+        // Build a config from the entered settings (plus the password just
+        // typed, which is not in $changes when blank), then a mailer for it.
+        $values = $changes;
+        $values['SMTP_PASS'] = (string) ($data['smtp_pass'] ?? '');
+        $config = Config::fromValues($values);
+
+        try {
+            self::mailerFactory($c)->make($config)->send(
+                $to,
+                null,
+                'OpenSendForm test email',
+                "This is a test email from OpenSendForm.\n\n"
+                . "If it reached you, your email settings are working and submissions "
+                . "will be delivered."
+            );
+        } catch (Throwable $e) {
+            $message = trim((string) preg_replace('/[\x00-\x1F\x7F]+/', ' ', $e->getMessage()));
+            self::flash($c, 'The test email could not be sent: ' . ($message === '' ? 'unknown error.' : $message));
+
+            return;
+        }
+
+        self::flash($c, 'Test email sent to ' . $to . '. Check that inbox to confirm it arrived.');
+    }
+
+    /**
+     * The request's scheme + host (+ non-default port), with no trailing path —
+     * the base URL the synthetic monitor drives its submissions against. Empty
+     * when the request carries no host.
+     */
+    private static function requestBaseUrl(ServerRequestInterface $request): string
+    {
+        $uri = $request->getUri();
+        $host = $uri->getHost();
+        if ($host === '') {
+            return '';
+        }
+
+        $scheme = $uri->getScheme() !== '' ? $uri->getScheme() : 'https';
+        $authority = $host;
+        $port = $uri->getPort();
+        $isDefault = ($scheme === 'http' && $port === 80) || ($scheme === 'https' && $port === 443);
+        if ($port !== null && !$isDefault) {
+            $authority .= ':' . $port;
+        }
+
+        return $scheme . '://' . $authority;
     }
 
     /**
@@ -388,6 +647,14 @@ final class InstallController
         $s = $c->get(Csrf::class);
 
         return $s;
+    }
+
+    private static function mailerFactory(ContainerInterface $c): MailerFactory
+    {
+        /** @var MailerFactory $f */
+        $f = $c->get(MailerFactory::class);
+
+        return $f;
     }
 
     private static function session(ContainerInterface $c): SessionInterface

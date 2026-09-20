@@ -36,6 +36,8 @@ final class InstallRoutes
             $group->post('/database', self::handler($container, [InstallController::class, 'database']));
             $group->get('/admin', self::handler($container, [InstallController::class, 'adminForm']));
             $group->post('/admin', self::handler($container, [InstallController::class, 'admin']));
+            $group->get('/mail', self::handler($container, [InstallController::class, 'mailForm']));
+            $group->post('/mail', self::handler($container, [InstallController::class, 'mail']));
             $group->get('/finish', self::handler($container, [InstallController::class, 'finishForm']));
             $group->post('/finish', self::handler($container, [InstallController::class, 'finish']));
             $group->get('/done', self::handler($container, [InstallController::class, 'done']));

@@ -133,6 +133,14 @@ final class ErrorHandler
         $tokens = self::e('/assets/tokens.css?v=' . Version::STRING);
         $css = self::e('/assets/admin.css?v=' . Version::STRING);
         $themeInit = self::e('/assets/theme-init.js?v=' . Version::STRING);
+        $adminJs = self::e('/assets/admin.js?v=' . Version::STRING);
+
+        // The one shared header (chrome-only variant): even an error page wears
+        // the same two-row appbar as every other screen (Task 1).
+        require_once dirname(__DIR__) . '/Admin/helpers.php';
+        require_once dirname(__DIR__) . '/Admin/icons.php';
+        require_once dirname(__DIR__) . '/Admin/appbar.php';
+        $appbar = \OpenSendForm\Admin\appbar(['variant' => 'chrome-only']);
 
         $html = <<<HTML
 <!DOCTYPE html>
@@ -142,17 +150,19 @@ final class ErrorHandler
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow">
-    <title>{$heading} — OpenSendForm</title>
+    <title>osf - {$heading}</title>
     <link rel="stylesheet" href="{$tokens}">
     <link rel="stylesheet" href="{$css}">
 </head>
 <body>
+{$appbar}
 <main class="container">
     <section class="osf-error">
         <h1>{$heading}</h1>
         <p>{$message}</p>{$detail}
     </section>
 </main>
+<script src="{$adminJs}" defer></script>
 </body>
 </html>
 

@@ -88,6 +88,8 @@ final class AdminRoutes
                 ->add($auth);
             $group->post('/mail/enable', self::handler($container, [MailController::class, 'enable']))
                 ->add($auth);
+            $group->post('/mail/cron-done', self::handler($container, [MailController::class, 'markCronDone']))
+                ->add($auth);
 
             // Deliverability (SPF/DKIM/DMARC checker for the sending domain).
             $group->get('/deliverability', self::handler($container, [DeliverabilityController::class, 'index']))

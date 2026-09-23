@@ -40,10 +40,16 @@ final class InstallController
     private const S_ADMIN = 'install.admin_created';
     /** Session key: the SMTP settings chosen at the (skippable) email step. */
     private const S_MAIL = 'install.mail';
+    /** Session key: the scheduled-tasks (cron) choice — 'done' or 'later'. */
+    private const S_CRON = 'install.cron';
     /** Session key: the install committed (config + lock written). */
     private const S_DONE = 'install.completed';
 
-    // --- Step 1: welcome + requirements -----------------------------------
+    /** The number of configurable steps the flow has (Finish is terminal,
+     *  outside the count — see the Finish page). Shown as "Step N of 7". */
+    private const STEP_COUNT = 7;
+
+    // --- Step 1: welcome --------------------------------------------------
 
     public static function welcome(
         ContainerInterface $c,
@@ -54,16 +60,32 @@ final class InstallController
             return $guard;
         }
 
+        return self::renderStep($c, $response, 'welcome', 1, 'Welcome', [
+            'title' => 'Welcome',
+        ]);
+    }
+
+    // --- Step 2: requirements (hosting check) -----------------------------
+
+    public static function requirementsForm(
+        ContainerInterface $c,
+        ServerRequestInterface $request,
+        ResponseInterface $response
+    ): ResponseInterface {
+        if (($guard = self::guardNotInstalled($c, $response)) !== null) {
+            return $guard;
+        }
+
         $requirements = self::requirements($c, $request);
 
-        return self::render($c, $response, 'welcome', [
-            'title'       => 'Install OpenSendForm',
+        return self::renderStep($c, $response, 'requirements', 2, 'Requirements', [
+            'title'       => 'Requirements',
             'checks'      => $requirements->checks(),
             'hasFailures' => $requirements->hasFailures(),
         ]);
     }
 
-    // --- Step 2: database -------------------------------------------------
+    // --- Step 3: database -------------------------------------------------
 
     public static function databaseForm(
         ContainerInterface $c,
@@ -74,7 +96,7 @@ final class InstallController
             return $guard;
         }
         if (self::requirements($c, $request)->hasFailures()) {
-            return self::redirect($response, '/install');
+            return self::redirect($response, '/install/requirements');
         }
 
         return self::renderDatabase($c, $response);
@@ -89,7 +111,7 @@ final class InstallController
             return $guard;
         }
         if (self::requirements($c, $request)->hasFailures()) {
-            return self::redirect($response, '/install');
+            return self::redirect($response, '/install/requirements');
         }
 
         $data = self::formData($request);
@@ -211,7 +233,7 @@ final class InstallController
         if ($action === 'skip') {
             self::session($c)->remove(self::S_MAIL);
 
-            return self::redirect($response, '/install/finish');
+            return self::redirect($response, '/install/scheduled');
         }
 
         // Validate the SMTP details (same rules as the admin Email page).
@@ -260,12 +282,12 @@ final class InstallController
 
         self::session($c)->set(self::S_MAIL, $changes);
 
-        return self::redirect($response, '/install/finish');
+        return self::redirect($response, '/install/scheduled');
     }
 
-    // --- Step 5: finish (review + commit) ---------------------------------
+    // --- Step 6: scheduled tasks (cron) -----------------------------------
 
-    public static function finishForm(
+    public static function scheduledForm(
         ContainerInterface $c,
         ServerRequestInterface $request,
         ResponseInterface $response
@@ -277,21 +299,56 @@ final class InstallController
             return $jump;
         }
 
-        /** @var array{summary:string} $dbConfig */
-        $dbConfig = self::session($c)->get(self::S_DB);
-        $mail = self::session($c)->get(self::S_MAIL);
-        $mailConfigured = is_array($mail);
+        return self::renderScheduled($c, $response);
+    }
 
-        return self::render($c, $response, 'finish', [
-            'title'          => 'Finish setup',
-            'dbSummary'      => (string) ($dbConfig['summary'] ?? ''),
-            'mailConfigured' => $mailConfigured,
-            'mailSummary'    => $mailConfigured
-                ? 'sending via ' . (string) ($mail['SMTP_HOST'] ?? '') . ', from ' . (string) ($mail['MAIL_FROM_ADDRESS'] ?? '')
-                : '',
-            'csrf'           => self::csrf($c)->token(),
+    public static function scheduled(
+        ContainerInterface $c,
+        ServerRequestInterface $request,
+        ResponseInterface $response
+    ): ResponseInterface {
+        if (($guard = self::guardNotInstalled($c, $response)) !== null) {
+            return $guard;
+        }
+        if (($jump = self::enforceOrder($c, $response, needsDb: true, needsAdmin: true)) !== null) {
+            return $jump;
+        }
+
+        $data = self::formData($request);
+        if (!self::csrf($c)->validate($data['_csrf'] ?? null)) {
+            return self::renderScheduled($c, $response, 'Your session expired. Please try again.', 400);
+        }
+
+        // Record the operator's choice so Finish can report it and the dashboard
+        // can nudge while it is still 'later'. No verification pretence — the app
+        // cannot see cron from a request; we only record what they told us.
+        $choice = (string) ($data['action'] ?? 'later') === 'done' ? 'done' : 'later';
+        self::session($c)->set(self::S_CRON, $choice);
+
+        return self::redirect($response, '/install/bot-protection');
+    }
+
+    // --- Step 7: bot protection (Turnstile signpost) ----------------------
+
+    public static function botProtectionForm(
+        ContainerInterface $c,
+        ServerRequestInterface $request,
+        ResponseInterface $response
+    ): ResponseInterface {
+        if (($guard = self::guardNotInstalled($c, $response)) !== null) {
+            return $guard;
+        }
+        if (($jump = self::enforceOrder($c, $response, needsDb: true, needsAdmin: true)) !== null) {
+            return $jump;
+        }
+
+        return self::renderStep($c, $response, 'botprotection', 7, 'Bot protection', [
+            'title' => 'Bot protection',
+            'csrf'  => self::csrf($c)->token(),
         ]);
     }
+
+    // --- Terminal: commit + Finish ----------------------------------------
 
     public static function finish(
         ContainerInterface $c,
@@ -309,7 +366,7 @@ final class InstallController
         if (!self::csrf($c)->validate($data['_csrf'] ?? null)) {
             self::flash($c, 'Your session expired. Please try again.');
 
-            return self::redirect($response, '/install/finish');
+            return self::redirect($response, '/install/bot-protection');
         }
 
         /** @var array{driver:string,dsn:string,user:string,pass:string,summary:string} $dbConfig */
@@ -328,13 +385,17 @@ final class InstallController
         if ($baseUrl !== '') {
             $extra['MONITOR_BASE_URL'] = $baseUrl;
         }
+        // Persist the scheduled-tasks choice (default 'later' if the step was
+        // somehow bypassed) so Finish and the dashboard can report/act on it.
+        $cron = self::session($c)->get(self::S_CRON);
+        $extra['CRON_SETUP'] = $cron === 'done' ? 'done' : 'later';
 
         try {
             self::installer($c)->commit($dbConfig, $extra);
         } catch (InstallerException $e) {
             self::flash($c, $e->getMessage());
 
-            return self::redirect($response, '/install/finish');
+            return self::redirect($response, '/install/bot-protection');
         }
 
         // Installed now. Destroy the pre-install session in full — its id AND
@@ -353,7 +414,7 @@ final class InstallController
         return self::redirect($response, '/install/done');
     }
 
-    // --- Step 6: done -----------------------------------------------------
+    // --- Terminal (outside the step count): Finish ------------------------
 
     public static function done(
         ContainerInterface $c,
@@ -368,45 +429,63 @@ final class InstallController
             return self::redirect($response, $target);
         }
 
-        // The two cron commands, verbatim and copy-paste ready, with the real
-        // absolute paths baked in: the PHP CLI binary (PHP_BINARY, with the
-        // common cPanel fallback noted in the template) and this install's own
-        // bin/osf, derived from the app's own location at runtime.
-        $php = self::phpBinary();
-        $osf = self::installRoot() . '/bin/osf';
+        // Report the outcome from what was actually PERSISTED at commit (the
+        // pre-install session is gone by now), so the checklist is truthful:
+        // whether email was set up, and whether the operator said they set up
+        // the cron jobs.
+        $config = Config::fromFile(self::paths($c)->configPath);
 
         return self::render($c, $response, 'done', [
-            'title'         => 'OpenSendForm is installed',
-            'version'       => Version::STRING,
-            'phpBinary'     => $php,
-            'monitorCmd'    => $php . ' ' . $osf . ' monitor:run',
-            'retryCmd'      => $php . ' ' . $osf . ' mail:retry',
+            'title'       => 'Finish',
+            'version'     => Version::STRING,
+            'mailEnabled' => $config->mailEnabled(),
+            'cronDone'    => $config->cronSetup() === 'done',
         ]);
     }
 
-    /**
-     * The PHP CLI binary to bake into the cron commands: PHP_BINARY when the
-     * SAPI gives us one, else the common cPanel CLI path. The template still
-     * notes the fallback in case the baked value is a web SAPI binary.
-     */
-    private static function phpBinary(): string
-    {
-        $binary = defined('PHP_BINARY') ? PHP_BINARY : '';
-
-        return $binary !== '' ? $binary : '/usr/local/bin/php';
-    }
-
-    /**
-     * The installation's root directory, derived from this file's own location
-     * (src/Install/), so the cron paths point at wherever the app was extracted
-     * without any manual entry.
-     */
-    private static function installRoot(): string
-    {
-        return dirname(__DIR__, 2);
-    }
-
     // --- Rendering helpers ------------------------------------------------
+
+    /**
+     * The Scheduled tasks step (6): plain-language purpose of both cron jobs,
+     * the two commands verbatim with runtime-derived absolute paths, and the
+     * cPanel recipe. No verification pretence — the choice is recorded, not checked.
+     */
+    private static function renderScheduled(
+        ContainerInterface $c,
+        ResponseInterface $response,
+        string $error = '',
+        int $status = 200
+    ): ResponseInterface {
+        return self::renderStep($c, $response, 'scheduled', 6, 'Scheduled tasks', [
+            'title'      => 'Scheduled tasks',
+            'csrf'       => self::csrf($c)->token(),
+            'error'      => $error,
+            'phpBinary'  => CronCommands::phpBinary(),
+            'monitorCmd' => CronCommands::monitorCommand(),
+            'retryCmd'   => CronCommands::retryCommand(),
+        ], $status);
+    }
+
+    /**
+     * Render an installer step with the shared onboarding-shell variables: the
+     * step number and label drive the "Step N of 7" progress indicator and the
+     * chrome-only appbar's row-2 label.
+     *
+     * @param array<string, mixed> $vars
+     */
+    private static function renderStep(
+        ContainerInterface $c,
+        ResponseInterface $response,
+        string $view,
+        int $stepNo,
+        string $stepLabel,
+        array $vars,
+        int $status = 200
+    ): ResponseInterface {
+        $vars += ['stepNo' => $stepNo, 'stepCount' => self::STEP_COUNT, 'stepLabel' => $stepLabel];
+
+        return self::render($c, $response, $view, $vars, $status);
+    }
 
     /**
      * @param array<string, mixed> $data
@@ -418,8 +497,8 @@ final class InstallController
         string $error = '',
         int $status = 200
     ): ResponseInterface {
-        return self::render($c, $response, 'database', [
-            'title'   => 'Choose a database',
+        return self::renderStep($c, $response, 'database', 3, 'Database', [
+            'title'   => 'Database',
             'csrf'    => self::csrf($c)->token(),
             'error'   => $error,
             // Preserve the choice and non-secret MySQL fields; NEVER the password.
@@ -441,8 +520,8 @@ final class InstallController
         string $error = '',
         int $status = 200
     ): ResponseInterface {
-        return self::render($c, $response, 'admin', [
-            'title'             => 'Create your admin account',
+        return self::renderStep($c, $response, 'admin', 4, 'Admin account', [
+            'title'             => 'Admin account',
             'csrf'              => self::csrf($c)->token(),
             'error'             => $error,
             'minPasswordLength' => 12,
@@ -474,7 +553,7 @@ final class InstallController
             ? (string) ($data['smtp_port'] ?? '')
             : MailSettingsForm::defaultPortFor($encryption);
 
-        return self::render($c, $response, 'mail', [
+        return self::renderStep($c, $response, 'mail', 5, 'Email sending', [
             'title'          => 'Email sending',
             'csrf'           => self::csrf($c)->token(),
             'error'          => $error,

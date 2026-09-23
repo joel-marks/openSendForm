@@ -9,9 +9,10 @@ use OpenSendForm\Install\Requirements;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Renders the installer welcome template directly to prove the requirements
- * table drives the Continue control: a failing check disables it (and shows
- * the remedy), while an all-clear set links onward.
+ * Renders the installer Requirements step (step 2 of the onboarding stepper,
+ * split out of the old combined welcome screen) directly to prove the hosting
+ * check drives the Continue control: a failing check disables it (and shows the
+ * remedy), while an all-clear set links onward to the database step.
  */
 final class WelcomeTemplateTest extends TestCase
 {
@@ -24,8 +25,10 @@ final class WelcomeTemplateTest extends TestCase
 
     public function testFailingRequirementDisablesContinueAndShowsRemedy(): void
     {
-        $html = $this->renderer->render('welcome', [
-            'title'       => 'Install',
+        $html = $this->renderer->render('requirements', [
+            'title'       => 'Requirements',
+            'stepNo'      => 2,
+            'stepCount'   => 7,
             'hasFailures' => true,
             'flashes'     => [],
             'checks'      => [[
@@ -44,8 +47,10 @@ final class WelcomeTemplateTest extends TestCase
 
     public function testAllClearRequirementsLinkOnward(): void
     {
-        $html = $this->renderer->render('welcome', [
-            'title'       => 'Install',
+        $html = $this->renderer->render('requirements', [
+            'title'       => 'Requirements',
+            'stepNo'      => 2,
+            'stepCount'   => 7,
             'hasFailures' => false,
             'flashes'     => [],
             'checks'      => [[

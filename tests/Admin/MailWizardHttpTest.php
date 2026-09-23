@@ -358,6 +358,31 @@ final class MailWizardHttpTest extends TestCase
         self::assertStringContainsString('Email sending is now on', $body);
     }
 
+    // --- Scheduled tasks (cron) block -------------------------------------
+
+    public function testMailPageShowsCronBlockAndMarkDoneClearsTheReminder(): void
+    {
+        $this->login();
+        $body = (string) $this->get('/admin/mail')->getBody();
+        // The findable cron block: anchor + both commands + the mark-done control.
+        self::assertStringContainsString('id="cron"', $body);
+        self::assertStringContainsString('monitor:run', $body);
+        self::assertStringContainsString('mail:retry', $body);
+        self::assertStringContainsString('action="/admin/mail/cron-done"', $body);
+
+        // Mark them set up: persists CRON_SETUP=done.
+        $csrf = $this->csrfFrom($this->get('/admin/mail'));
+        $response = $this->post('/admin/mail/cron-done', ['_csrf' => $csrf]);
+        self::assertSame(302, $response->getStatusCode());
+        self::assertStringContainsString("'CRON_SETUP' => 'done'", $this->configFileText());
+
+        // After a rebuild the page reflects the done state — no mark-done control.
+        $this->buildApp();
+        $done = (string) $this->get('/admin/mail')->getBody();
+        self::assertStringContainsString('marked your scheduled tasks as set up', $done);
+        self::assertStringNotContainsString('action="/admin/mail/cron-done"', $done);
+    }
+
     // --- Dashboard banner -------------------------------------------------
 
     public function testDashboardMailBannerShownWhenDisabled(): void

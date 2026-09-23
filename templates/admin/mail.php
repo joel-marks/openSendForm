@@ -1,5 +1,6 @@
 <?php
 use function OpenSendForm\Admin\h;
+use function OpenSendForm\Admin\icon;
 
 /**
  * The mail-setup page: SMTP settings, the enable switch and a test send. The
@@ -21,6 +22,10 @@ use function OpenSendForm\Admin\h;
  * @var bool   $offerEnable
  * @var string $testRecipient
  * @var string $csrf
+ * @var string $cronMonitorCmd
+ * @var string $cronRetryCmd
+ * @var string $cronPhp
+ * @var bool   $cronDone
  */
 ?>
 <h1>Email</h1>
@@ -105,5 +110,45 @@ use function OpenSendForm\Admin\h;
                 <button type="submit">Enable sending now</button>
             </form>
         </div>
+    <?php endif; ?>
+</section>
+
+<!-- ================= Scheduled tasks (cron) ================= -->
+<section id="cron">
+    <h2>Scheduled tasks (cron)</h2>
+    <p><small>Two small jobs keep OpenSendForm running: hourly monitoring of your
+        forms, and an hourly retry of any emails that failed the first time. Add
+        each as a cron job in cPanel (<strong>Cron Jobs</strong> → Once Per Hour),
+        setting the second job’s Minute to <code>5</code> so they don’t overlap.</small></p>
+
+    <h3>Job 1 — monitoring</h3>
+    <p class="osf-copy">
+        <code><?= h($cronMonitorCmd) ?></code>
+        <button type="button" class="secondary outline" data-copy="<?= h($cronMonitorCmd) ?>"><?= icon('copy') ?> Copy</button>
+    </p>
+
+    <h3>Job 2 — retry failed emails</h3>
+    <p class="osf-copy">
+        <code><?= h($cronRetryCmd) ?></code>
+        <button type="button" class="secondary outline" data-copy="<?= h($cronRetryCmd) ?>"><?= icon('copy') ?> Copy</button>
+    </p>
+
+    <p><small>If cron reports that the PHP path (<code><?= h($cronPhp) ?></code>) does
+        not work, it is usually <code>/usr/local/bin/php</code> — replace the path
+        at the start of each command with that.</small></p>
+
+    <?php if ($cronDone): ?>
+        <p class="osf-flash osf-flash--success" role="status">
+            <?= icon('check') ?> <span>You’ve marked your scheduled tasks as set up.</span>
+        </p>
+    <?php else: ?>
+        <p><small>Once you’ve added both cron jobs, mark them as set up to clear the
+            dashboard reminder.</small></p>
+        <form method="post" action="/admin/mail/cron-done">
+            <input type="hidden" name="_csrf" value="<?= h($csrf) ?>">
+            <div class="osf-actions">
+                <button type="submit" class="secondary"><?= icon('check') ?> I’ve set these up</button>
+            </div>
+        </form>
     <?php endif; ?>
 </section>

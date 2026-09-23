@@ -143,6 +143,22 @@ main.container {
    single hairline under the second (tab) row only; no divider between
    them. -- */
 
+/* The single header component (src/Admin/appbar.php): ONE wrapper carrying
+   both rows. It paints the shared surface so the two rows are visually one
+   block; the rows keep their own matching surface too (defence in depth). */
+.osf-appbar {
+    background: var(--osf-bg-inset);
+}
+
+/* Row-2 step label (installer chrome-only variant): a muted caption sitting
+   where the tab strip would be, aligned to the same column. */
+.osf-appbar-step {
+    padding: var(--osf-space-1) var(--osf-space-1);
+    color: var(--osf-text-muted);
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
 .osf-header {
     background: var(--osf-bg-inset);
 }
@@ -280,8 +296,17 @@ main.container {
 .osf-tabnav-inner {
     display: flex;
     flex-wrap: wrap;           /* tabs wrap on narrow viewports */
+    align-items: center;
     gap: 0 var(--osf-space-4);
     background: transparent;   /* pinned: never shadow .osf-tabnav's surface */
+}
+
+/* When the tab row holds NO nav items (the chrome-only variant on login,
+   installer, error and submit pages), keep it at a tab-row height so its
+   shared surface + hairline still read as a band. The populated admin tab row
+   is never :empty, so its layout is untouched. */
+.osf-tabnav-inner:empty {
+    min-height: 2rem;
 }
 
 .osf-tab-link {
@@ -494,18 +519,47 @@ form { margin-bottom: var(--osf-space-4); }
 /* --- Action groups (buttons/links that act together, e.g. a table row's
    Edit + Disable, or a form's submit + Cancel) -------------------------- */
 
+/* An action row owns a standard top gap from the --osf-space scale, so no page
+   ever hand-adds a margin above its primary action (rhythm has one source). */
 .osf-actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--osf-space-2);
+    margin-top: var(--osf-space-5);
 }
 
-/* The installer's single forward button (Continue / Test and continue): set it
-   apart from the last field above with a clear gap, one step up the spacing
-   scale from the inter-field gap so the primary action reads as separate. */
+/* ...except where an action group is a sub-element of another laid-out row —
+   a table cell's row actions, or a toolbar's side — there the parent owns the
+   spacing and the group must sit tight (no inherited top margin). */
+td .osf-actions,
+.osf-toolbar .osf-actions {
+    margin-top: 0;
+}
+
+/* Installer "Step N of 7" progress indicator: a small uppercase eyebrow above
+   the step title. */
+.osf-step-progress {
+    margin: 0 0 var(--osf-space-2);
+    color: var(--osf-text-muted);
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* The installer/stepper action row: primary right, secondary/skip left, in
+   identical placement on every step. The top gap comes from .osf-actions
+   above (single source); this only lays the row out. */
 .osf-step-actions {
-    margin-top: var(--osf-space-5);
+    justify-content: flex-end;
+}
+
+/* The left-hand secondary/skip is pushed away from the primary so it sits on
+   the left while the primary stays on the right — and a lone primary still
+   sits right. */
+.osf-step-actions > .osf-step-skip {
+    margin-right: auto;
 }
 
 /* A toolbar row that pairs a filter/search bar with a separate action off to
@@ -561,7 +615,12 @@ section > h1:first-child { margin-top: 0; }
 
 /* --- Tables (collapse to cards when narrow) --------------------------- */
 
-.osf-table-wrap { overflow-x: auto; }
+/* Tables own their trailing gap from the scale, so content after a table is
+   never left butting against it (rhythm is component-owned, not per page). */
+.osf-table-wrap {
+    overflow-x: auto;
+    margin-bottom: var(--osf-space-5);
+}
 
 .osf-table {
     width: 100%;

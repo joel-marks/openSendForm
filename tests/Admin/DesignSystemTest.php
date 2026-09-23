@@ -183,7 +183,9 @@ final class DesignSystemTest extends TestCase
 
     public function testNavIsATopHeaderWithDocsLinkAndNoSidebar(): void
     {
-        $nav = self::read('templates/admin/_nav.php');
+        // The header markup now lives in the single shared component
+        // (src/Admin/appbar.php), not a per-area nav partial.
+        $nav = self::read('src/Admin/appbar.php');
 
         // Header bar shape (not a docs layout), plus the tab bar beneath it.
         self::assertStringContainsString('osf-header', $nav);
@@ -284,16 +286,13 @@ final class DesignSystemTest extends TestCase
             'The single hairline sits under the second (tab) row'
         );
 
-        // No surface between the two rows: they must be direct siblings in
-        // the markup (header closes, then the tab <nav> opens immediately),
-        // so no wrapper element could carry its own (possibly stale/raised)
-        // background between them.
-        $nav = self::read('templates/admin/_nav.php');
-        self::assertMatchesRegularExpression(
-            '/<\/header>\s*<nav class="osf-tabnav"/',
-            $nav,
-            'A wrapper between the header and the tab row could shadow the ruled surfaces'
-        );
+        // No surface between the two rows: the header closes and the tab <nav>
+        // opens immediately (the single .osf-appbar wrapper is the shared
+        // surface, not a raised one between them). Verified against the
+        // component source and — end to end — by AppbarTest on rendered pages.
+        $appbar = self::read('src/Admin/appbar.php');
+        self::assertStringContainsString('</div></header>', $appbar);
+        self::assertStringContainsString('<nav class="osf-tabnav"', $appbar);
 
         // No other rule in the stylesheet backgrounds .osf-header or
         // .osf-tabnav (e.g. a broader "header, nav" or wrapper selector) —
@@ -307,7 +306,7 @@ final class DesignSystemTest extends TestCase
     public function testHeaderAndTabBarSpanTheViewportWithColumnAlignedContent(): void
     {
         $css = self::read('public/assets/admin.css');
-        $nav = self::read('templates/admin/_nav.php');
+        $nav = self::read('src/Admin/appbar.php');
 
         // The bars themselves (.osf-header/.osf-tabnav) carry no max-width —
         // only their "-inner container" children are column-constrained.
@@ -337,7 +336,7 @@ final class DesignSystemTest extends TestCase
 
     public function testAccountMenuIsADetailsDropdownWithLogoutInsideIt(): void
     {
-        $nav = self::read('templates/admin/_nav.php');
+        $nav = self::read('src/Admin/appbar.php');
 
         // The admin name is a native <details>/<summary> dropdown (no JS
         // needed to open/close it, CSP-safe) rather than a plain link.
@@ -345,9 +344,11 @@ final class DesignSystemTest extends TestCase
         self::assertStringContainsString('<summary class="osf-nav-link osf-admin-name">', $nav);
         self::assertStringContainsString("icon('chevron-down'", $nav);
 
-        // The panel holds the account link and the logout form as menu items.
+        // The panel holds the account link, the external Reinstall guide link
+        // (styled like Docs: new tab + noopener) and the logout form.
         self::assertStringContainsString('class="osf-account-panel"', $nav);
         self::assertStringContainsString('href="/admin/account">Your account</a>', $nav);
+        self::assertStringContainsString('href="https://opensendform.com/guides/reinstall"', $nav);
         self::assertStringContainsString('action="/admin/logout"', $nav);
         self::assertStringContainsString('osf-account-item--danger', $nav);
 
@@ -365,7 +366,7 @@ final class DesignSystemTest extends TestCase
             'templates/admin/forms_list.php',
             'templates/admin/submissions.php',
             'templates/admin/admins.php',
-            'templates/install/welcome.php',
+            'templates/install/requirements.php',
         ];
 
         foreach ($tableTemplates as $tpl) {
@@ -535,6 +536,59 @@ final class DesignSystemTest extends TestCase
             self::assertStringNotContainsString('--osf-bg-raised', $block[1]);
             self::assertStringNotContainsString('--osf-bg-inset', $block[1]);
         }
+    }
+
+    // --- Vertical rhythm: component-owned, single source (Task 2) ----------
+
+    /**
+     * Rhythm lives in admin.css, never per page. The greppable rule (defined
+     * pragmatically here): no page template may carry an inline `style="..."`
+     * attribute that sets BLOCK SPACING — margin, padding or gap. A non-spacing
+     * inline style such as the embed snippet's honeypot `display:none` is fine;
+     * only ad-hoc block spacing is forbidden, because that is exactly what the
+     * component rules in admin.css now own.
+     */
+    public function testTemplatesCarryNoInlineBlockSpacingAndAdminCssOwnsRhythm(): void
+    {
+        $templates = array_merge(
+            glob(self::root() . '/templates/admin/*.php'),
+            glob(self::root() . '/templates/install/*.php'),
+            glob(self::root() . '/templates/_shared/*.php')
+        );
+
+        $inlineSpacing = '/style="[^"]*(?:margin|padding|gap)[^"]*"/i';
+        foreach ($templates as $tpl) {
+            $html = (string) file_get_contents($tpl);
+            self::assertDoesNotMatchRegularExpression(
+                $inlineSpacing,
+                $html,
+                basename($tpl) . ' sets block spacing inline — admin.css owns vertical rhythm'
+            );
+        }
+
+        // admin.css is the single source: the block components carry their
+        // standard margins from the --osf-space scale.
+        $css = self::read('public/assets/admin.css');
+
+        // Action rows own their top gap (so no page hand-adds one).
+        self::assertMatchesRegularExpression(
+            '/\.osf-actions\s*\{[^}]*margin-top:\s*var\(--osf-space-5\)/s',
+            $css,
+            '.osf-actions must own a standard top margin from the scale'
+        );
+        // The installer step action row's OWN rule carries no margin any more —
+        // it only lays the row out; the gap comes from .osf-actions.
+        self::assertMatchesRegularExpression('/\.osf-step-actions\s*\{([^}]*)\}/s', $css);
+        preg_match('/\.osf-step-actions\s*\{([^}]*)\}/s', $css, $stepBlock);
+        self::assertStringNotContainsString(
+            'margin',
+            $stepBlock[1],
+            '.osf-step-actions must not re-declare a one-off margin (single source of rhythm)'
+        );
+        // Fields, tables and panels carry their own vertical margins.
+        self::assertMatchesRegularExpression('/\.osf-field\s*\{[^}]*margin-bottom:\s*var\(--osf-space/s', $css);
+        self::assertMatchesRegularExpression('/\.osf-table-wrap\s*\{[^}]*margin-bottom:\s*var\(--osf-space/s', $css);
+        self::assertMatchesRegularExpression('/section\s*\{[^}]*margin-bottom:\s*var\(--osf-space/s', $css);
     }
 
     // --- Versioned asset URLs (structural cache-busting) ---------------------

@@ -9,6 +9,7 @@ use OpenSendForm\Auth\Csrf;
 use OpenSendForm\Auth\SessionInterface;
 use OpenSendForm\Config;
 use OpenSendForm\Install\ConfigWriter;
+use OpenSendForm\Install\CronCommands;
 use OpenSendForm\Mail\MailerInterface;
 use OpenSendForm\Mail\MailSettingsForm;
 use Psr\Container\ContainerInterface;
@@ -224,6 +225,43 @@ final class MailController
         return self::redirect($response, '/admin/mail');
     }
 
+    // --- Scheduled tasks (cron) -------------------------------------------
+
+    /**
+     * Mark the two scheduled tasks (cron) as set up, clearing the dashboard
+     * reminder. Records CRON_SETUP=done; a no-op on a bad CSRF token. The app
+     * cannot see cron from a request, so this is the operator's own confirmation
+     * (the same promise the installer's Scheduled tasks step recorded).
+     */
+    public static function markCronDone(
+        ContainerInterface $c,
+        ServerRequestInterface $request,
+        ResponseInterface $response
+    ): ResponseInterface {
+        if (self::auth($c)->currentAdmin() === null) {
+            return self::redirect($response, '/admin/login');
+        }
+
+        $data = self::formData($request);
+        if (!self::csrf($c)->validate($data['_csrf'] ?? null)) {
+            self::flash($c)->error('Your session expired. Please try again.');
+
+            return self::redirect($response, '/admin/mail');
+        }
+
+        try {
+            self::configWriter($c)->save(['CRON_SETUP' => 'done']);
+        } catch (RuntimeException $e) {
+            self::flash($c)->error('Could not save that: ' . self::sanitise($e->getMessage()));
+
+            return self::redirect($response, '/admin/mail');
+        }
+
+        self::flash($c)->success('Marked your scheduled tasks as set up.');
+
+        return self::redirect($response, '/admin/mail');
+    }
+
     // --- Rendering --------------------------------------------------------
 
     /**
@@ -278,6 +316,13 @@ final class MailController
             'shadowed'       => self::shadowedSettings($config, $writer),
             'offerEnable'    => !$config->mailEnabled() && self::session($c)->get(self::S_CAN_ENABLE) === true,
             'testRecipient'  => $adminEmail,
+            // The scheduled-tasks (cron) block: the two commands with real paths,
+            // findable here post-install (the installer's Finish + dashboard both
+            // point at it). "Mark as set up" clears the dashboard reminder.
+            'cronMonitorCmd' => CronCommands::monitorCommand(),
+            'cronRetryCmd'   => CronCommands::retryCommand(),
+            'cronPhp'        => CronCommands::phpBinary(),
+            'cronDone'       => $config->cronSetup() === 'done',
         ];
 
         return AdminView::renderPage($c, $response, 'mail', $vars, 'mail', $status);

@@ -1,75 +1,81 @@
 <?php
 use function OpenSendForm\Admin\h;
-use function OpenSendForm\Admin\icon;
 
 /**
- * The install-complete screen. Confirms success, then gives the operator the
- * two things a shipped install needs a human to do by hand: set up the two
- * scheduled tasks (cron) and, optionally, per-form bot protection.
+ * The terminal Finish page (replaces the old "Done" screen). A status CHECKLIST,
+ * not prose: what is set up and what is still optional/pending. It sits outside
+ * the "Step N of 7" count. One primary action: go to the dashboard.
  *
  * @var string $version
- * @var string $phpBinary The PHP CLI binary baked into the cron commands.
- * @var string $monitorCmd Full monitor:run command (php + path + subcommand).
- * @var string $retryCmd    Full mail:retry command.
+ * @var bool   $mailEnabled Whether the email step configured + enabled sending.
+ * @var bool   $cronDone    Whether the operator confirmed the cron jobs are set up.
  */
+
+$rows = [
+    [
+        'label'  => 'App installed',
+        'class'  => 'osf-badge--ok',
+        'state'  => 'Done',
+        'note'   => '',
+    ],
+    [
+        'label'  => 'Email sending',
+        'class'  => $mailEnabled ? 'osf-badge--ok' : 'osf-badge--muted',
+        'state'  => $mailEnabled ? 'On' : 'Skipped',
+        'note'   => $mailEnabled ? '' : 'Set it up any time in the admin Email tab.',
+    ],
+    [
+        'label'  => 'Scheduled tasks',
+        'class'  => $cronDone ? 'osf-badge--ok' : 'osf-badge--warn',
+        'state'  => $cronDone ? 'Set up' : 'Pending',
+        'note'   => $cronDone ? '' : 'The commands are available from the admin Email tab.',
+    ],
+    [
+        'label'  => 'Bot protection',
+        'class'  => 'osf-badge--muted',
+        'state'  => 'Skipped',
+        'note'   => 'Optional, added per form from a form’s settings.',
+    ],
+];
 ?>
 <h1>OpenSendForm is installed 🎉</h1>
 
-<p>Setup is complete. You can now sign in and start creating forms.</p>
+<p>Here’s where things stand. Anything not finished can be done later from the
+    admin panel.</p>
 
-<p><a href="/admin/login" role="button">Go to sign in</a></p>
+<div class="osf-table-wrap">
+    <table class="osf-table">
+        <thead>
+            <tr>
+                <th scope="col">Item</th>
+                <th scope="col">Status</th>
+            </tr>
+        </thead>
+        <tbody>
+        <?php foreach ($rows as $row): ?>
+            <tr>
+                <td data-label="Item">
+                    <?= h($row['label']) ?>
+                    <?php if ($row['note'] !== ''): ?>
+                        <br><small><?= h($row['note']) ?></small>
+                    <?php endif; ?>
+                </td>
+                <td data-label="Status"><span class="osf-badge <?= h($row['class']) ?>"><?= h($row['state']) ?></span></td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+</div>
 
-<h2>Set up your scheduled tasks (cron)</h2>
+<p><small>
+    <strong>The installer is now locked, and that’s safe.</strong> A visitor
+    cannot re-run setup or take over your site. If you ever genuinely need to
+    run the installer again, follow
+    <a href="https://opensendform.com/guides/reinstall" target="_blank" rel="noopener">the reinstall guide</a>.
+</small></p>
 
-<p>OpenSendForm needs two small scheduled jobs. Copy each command below and add
-    it as a cron job in cPanel:</p>
-
-<ol>
-    <li>In cPanel open <strong>Cron Jobs</strong>.</li>
-    <li>Under <strong>Common Settings</strong> choose <strong>Once Per Hour
-        (0 * * * *)</strong>.</li>
-    <li>Paste the first command into the <strong>Command</strong> box and click
-        <strong>Add New Cron Job</strong>. Then add the second job the same way,
-        but change the <strong>Minute</strong> field from <code>0</code> to
-        <code>5</code> so the two jobs don’t run at the same moment.</li>
-</ol>
-
-<h3>Job 1 — monitoring</h3>
-<p><small>Checks every hour that your forms are still working and emails you if
-    one stops.</small></p>
-<p class="osf-copy">
-    <code><?= h($monitorCmd) ?></code>
-    <button type="button" class="secondary outline" data-copy="<?= h($monitorCmd) ?>"><?= icon('copy') ?> Copy</button>
-</p>
-
-<h3>Job 2 — retry failed emails</h3>
-<p><small>Re-sends, once an hour, any submission emails that failed the first
-    time (for example if your mail server was briefly unreachable).</small></p>
-<p class="osf-copy">
-    <code><?= h($retryCmd) ?></code>
-    <button type="button" class="secondary outline" data-copy="<?= h($retryCmd) ?>"><?= icon('copy') ?> Copy</button>
-</p>
-
-<p><small>If cron reports that the PHP path (<code><?= h($phpBinary) ?></code>)
-    does not work, your host’s PHP command line is usually
-    <code>/usr/local/bin/php</code> — replace the path at the start of each
-    command with that.</small></p>
-
-<h2>Good to know</h2>
-
-<ul>
-    <li>
-        <strong>Optional bot protection.</strong> Each form can use Cloudflare
-        Turnstile — a free, privacy-friendly check that blocks automated spam.
-        It’s optional and can be switched on any time from a form’s settings. See
-        <a href="https://opensendform.com/guides/turnstile" target="_blank" rel="noopener">the Turnstile guide</a>.
-    </li>
-    <li>
-        <strong>The installer is now locked, and that’s safe.</strong> A visitor
-        cannot re-run setup or take over your site. If you ever genuinely need to
-        run the installer again, follow
-        <a href="https://opensendform.com/guides/reinstall" target="_blank" rel="noopener">the reinstall guide</a>.
-    </li>
-</ul>
+<div class="osf-actions osf-step-actions">
+    <a href="/admin/login" role="button">Go to your dashboard</a>
+</div>
 
 <p><small>Installed version <?= h($version) ?>.</small></p>

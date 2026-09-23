@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OpenSendForm\Http;
 
 use OpenSendForm\Submit\SubmitOutcome;
+use OpenSendForm\Version;
 use Psr\Http\Message\ResponseInterface;
 
 /**
@@ -13,9 +14,10 @@ use Psr\Http\Message\ResponseInterface;
  * Progressive enhancement is absolute: a plain <form> whose action is the
  * submit URL still works with JS absent or failed. Such a request is a
  * top-level browser navigation that prefers text/html, so instead of the JSON
- * contract the endpoint returns one of these minimal, self-contained pages —
- * inline styles only, no assets, no scripts — echoing success or the failure
- * message with a link back to the page the submission came from.
+ * contract the endpoint returns one of these pages — styled within the design
+ * system and wearing the one shared header (chrome-only appbar, Task 1) —
+ * echoing success or the failure message with a link back to the page the
+ * submission came from.
  *
  * The JSON contract is unchanged; content negotiation in Routes::submit picks
  * this renderer only when the client explicitly prefers HTML.
@@ -66,35 +68,43 @@ final class SubmitHtmlPage
 
         $back = '';
         if ($backUrl !== null) {
-            $back = '<p class="back"><a href="' . self::esc($backUrl) . '">&larr; Back to the form</a></p>';
+            $back = '<p class="osf-actions"><a href="' . self::esc($backUrl) . '">&larr; Back to the form</a></p>';
         }
+
+        $tokens = self::esc('/assets/tokens.css?v=' . Version::STRING);
+        $css = self::esc('/assets/admin.css?v=' . Version::STRING);
+        $themeInit = self::esc('/assets/theme-init.js?v=' . Version::STRING);
+        $adminJs = self::esc('/assets/admin.js?v=' . Version::STRING);
+
+        // The one shared header (chrome-only variant) — same appbar as every
+        // other page in the app.
+        require_once dirname(__DIR__) . '/Admin/helpers.php';
+        require_once dirname(__DIR__) . '/Admin/icons.php';
+        require_once dirname(__DIR__) . '/Admin/appbar.php';
+        $appbar = \OpenSendForm\Admin\appbar(['variant' => 'chrome-only']);
 
         return <<<HTML
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-palette="github">
 <head>
+<script src="{$themeInit}"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>{$t}</title>
-<style>
-:root{color-scheme:light dark}
-body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.5;margin:0;
-min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1.5rem;background:#f4f5f7;color:#1c1e21}
-main{max-width:32rem;width:100%;background:#fff;border-radius:.5rem;padding:2rem;
-box-shadow:0 4px 24px rgba(0,0,0,.08);text-align:center}
-h1{margin:0 0 .5rem;font-size:1.5rem}
-p{margin:0 0 1rem}
-.back a{color:#2563eb}
-@media(prefers-color-scheme:dark){body{background:#16181c;color:#e6e7e9}main{background:#22252a;box-shadow:none}.back a{color:#8ab4ff}}
-</style>
+<title>osf - {$t}</title>
+<link rel="stylesheet" href="{$tokens}">
+<link rel="stylesheet" href="{$css}">
 </head>
 <body>
-<main>
+{$appbar}
+<main class="container">
+<section class="osf-error">
 <h1>{$h}</h1>
 <p>{$m}</p>
 {$back}
+</section>
 </main>
+<script src="{$adminJs}" defer></script>
 </body>
 </html>
 HTML;

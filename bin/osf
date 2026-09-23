@@ -85,6 +85,8 @@ try {
             exit(cmdFormDelete($db, $args));
         case 'admin:create':
             exit(cmdAdminCreate($db, $args));
+        case 'admin:list':
+            exit(cmdAdminList($db));
         case 'admin:delete':
             exit(cmdAdminDelete($db, $args));
         case 'admin:reset-2fa':
@@ -372,6 +374,39 @@ function cmdAdminCreate(Database $db, array $args): int
 
     fwrite(STDOUT, "Created admin #{$admin['id']} <{$admin['email']}> ({$admin['display_name']}).\n");
     fwrite(STDOUT, "Sign in at /admin/login\n");
+
+    return 0;
+}
+
+/**
+ * admin:list
+ *
+ * Lists every administrator — id, display name, email, active state and 2FA
+ * enrolment state — oldest first. Metadata only; never a secret. The companion
+ * to admin:reset-2fa / admin:delete, which both take a raw id: run this first to
+ * find the id you need.
+ */
+function cmdAdminList(Database $db): int
+{
+    $hasher = new PasswordHasher();
+    $repo = new AdminRepository($db, $hasher, new RecoveryCodes($hasher));
+
+    $admins = $repo->listAll();
+    if ($admins === []) {
+        fwrite(STDOUT, "No admins yet.\n");
+        return 0;
+    }
+
+    foreach ($admins as $admin) {
+        fwrite(STDOUT, sprintf(
+            "#%d  %s  <%s>  [%s]  2FA %s\n",
+            (int) $admin['id'],
+            (string) $admin['display_name'],
+            (string) $admin['email'],
+            (int) $admin['is_active'] === 1 ? 'active' : 'inactive',
+            (int) $admin['totp_enabled'] === 1 ? 'on' : 'off'
+        ));
+    }
 
     return 0;
 }
@@ -985,6 +1020,7 @@ function usage(): string
       bin/osf form:turnstile ID --disable
       bin/osf form:delete ID
       bin/osf admin:create --email=EMAIL --name=NAME
+      bin/osf admin:list
       bin/osf admin:delete ID
       bin/osf admin:reset-2fa ID
       bin/osf mail:retry
@@ -1008,6 +1044,9 @@ function usage(): string
         shell access is already the higher privilege.
       admin:create prompts for the password interactively (hidden when a
         TTY is available); it must be at least 12 characters.
+      admin:list prints every admin — id, name, email, active state and 2FA
+        state — oldest first; metadata only. Run it to find the id that
+        admin:reset-2fa and admin:delete take.
       admin:delete permanently removes an admin; refuses the last active
         admin. No password prompt — shell access is already the higher
         privilege.

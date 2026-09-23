@@ -26,6 +26,7 @@ final class TemplateRenderer
         $this->directory = rtrim($directory, '/');
         require_once __DIR__ . '/helpers.php';
         require_once __DIR__ . '/icons.php';
+        require_once __DIR__ . '/appbar.php';
     }
 
     /**

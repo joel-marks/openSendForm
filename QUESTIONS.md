@@ -361,3 +361,35 @@ decisions are recorded here for transparency, both non-blocking:
    does not auto-clear the banner; the operator can still clear it explicitly via
    "mark set up" in the Email tab. Flag if `mail:retry` execution should also
    auto-clear it (would need a new last-run marker); no blocker.
+
+## fix/cron-noise-and-monitor-cost (2026-10-15)
+
+All tasks were prescriptive and implemented as ruled; no blockers. Three
+non-blocking interpretive decisions recorded for review:
+
+1. **First-run MONITOR_SECRET generation is SILENT under `--quiet`.** The
+   ruling's noteworthy list for monitor:run is explicit — print under --quiet
+   only when "any check failed, any alert was sent, or an alert could not be
+   sent." Secret generation is a one-time first-run event not on that list, so
+   a quiet first run writes the secret back to the config file but prints
+   nothing (so cPanel sends no mail). The secret is still persisted; the
+   operator simply isn't emailed about it. Non-quiet output still announces it.
+   Flag if the first-run secret write should force output even under --quiet.
+
+2. **Delivery poll interval = `timeout / DELIVERY_POLL_ATTEMPTS` (5), min 1s.**
+   The ruling asked for "an immediate check, then at most a few short-interval
+   re-checks; the poll interval tightens accordingly" as the timeout dropped
+   30→10. Implemented as a fixed small number of re-checks (5) with the interval
+   derived from the timeout (so at the new 10s default the interval is 2s and
+   the five re-checks span the window; it tightens automatically if the timeout
+   is lowered further). The Sleeper seam is whole-second, so sub-second polling
+   was not pursued. Flag if a different cadence (e.g. a fixed 1s interval capped
+   at N attempts) is preferred.
+
+3. **`monitor:status` is unchanged; deferral surfaces only in the run output.**
+   "Status/output reflect deferral" was read as the monitor:run summary (new
+   `deferred` count, a "Deferred N form(s)…" line, and the `runtime:` summary).
+   `monitor:status` already renders a not-yet-checked form as "due now", which
+   naturally reflects a deferred form still awaiting its next run, so no change
+   was made there. Flag if monitor:status should explicitly label forms deferred
+   by the most recent run (would need to persist per-run deferral state).

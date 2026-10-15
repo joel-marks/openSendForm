@@ -45,6 +45,7 @@ final class MonitorServiceTest extends TestCase
     private MonitorRepository $checks;
     private string $configDir;
     private int $canaryId;
+    private FakeSleeper $sleeper;
 
     protected function setUp(): void
     {
@@ -225,16 +226,97 @@ final class MonitorServiceTest extends TestCase
         self::assertSame('every run', $status[0]['next_due']);
     }
 
+    // --- Run cost (poll, min-time, budget, runtime) -----------------------
+
+    public function testImmediateSentShortCircuitsTheDeliveryPoll(): void
+    {
+        // Delivery is synchronous, so the row is 'sent' on the first read: the
+        // only sleep is the min-submit-time wait, with NO delivery-poll re-checks.
+        $summary = $this->monitor(new FakeMailer(), new FakeMailer())->run();
+
+        self::assertSame(0, $summary['failures']);
+        self::assertSame([4], $this->sleeper->sleeps); // MIN_SUBMIT_SECONDS 3 + margin 1
+    }
+
+    public function testMinTimeWaitDerivesFromConfiguredMinSubmitSeconds(): void
+    {
+        // Raising MIN_SUBMIT_SECONDS lengthens the probe's pre-POST wait by the
+        // same amount (plus the fixed small margin) — the sleep is derived from
+        // config, never a fixed worst case.
+        $summary = $this->monitor(
+            new FakeMailer(),
+            new FakeMailer(),
+            overrides: ['MIN_SUBMIT_SECONDS' => '7']
+        )->run();
+
+        self::assertSame(0, $summary['failures']);
+        self::assertSame([8], $this->sleeper->sleeps); // 7 + margin 1, no poll
+    }
+
+    public function testRowStillReceivedAtTimeoutIsAFailure(): void
+    {
+        // Mail off -> DeliveryStage skips -> the synthetic row stays 'received',
+        // so the poll runs the full send-timeout window and the check honestly
+        // fails (delivery did not happen in-request).
+        $summary = $this->monitor(
+            new FakeMailer(),
+            new FakeMailer(),
+            overrides: ['MAIL_ENABLED' => '0', 'MONITOR_SEND_TIMEOUT_SECONDS' => '10']
+        )->run();
+
+        self::assertSame(1, $summary['failures']);
+        self::assertStringContainsString("did not reach 'sent'", $summary['results'][0]['detail']);
+        // 4s min-time wait, then five 2s re-checks (interval = timeout/5) spanning
+        // the 10s timeout window — a few short re-checks, not thirty 1s polls.
+        self::assertSame([4, 2, 2, 2, 2, 2], $this->sleeper->sleeps);
+    }
+
+    public function testTimeBudgetDefersFormsAfterTheCanary(): void
+    {
+        // A second active form, never checked, so the schedule plans [canary, #2].
+        $this->forms->createForm('Second', 'two@example.com', ['https://two.example.com']);
+
+        // Budget smaller than the canary's own cost: the canary always runs, then
+        // the second form defers to the next run (deferral is not a failure).
+        $summary = $this->monitor(
+            new FakeMailer(),
+            new FakeMailer(),
+            overrides: ['MONITOR_TIME_BUDGET_SECONDS' => '2']
+        )->run();
+
+        self::assertSame(1, $summary['checks_ran']);
+        self::assertSame(1, $summary['deferred']);
+        self::assertSame(0, $summary['failures']);
+        self::assertSame($this->canaryId, $summary['results'][0]['form_id']);
+        // Elapsed is reported for the runtime summary line.
+        self::assertSame(4, $summary['elapsed_seconds']);
+    }
+
+    public function testGenerousBudgetChecksEveryDueFormWithNoDeferral(): void
+    {
+        $this->forms->createForm('Second', 'two@example.com', ['https://two.example.com']);
+
+        // Default budget (45s) is ample for two instant synthetic checks.
+        $summary = $this->monitor(new FakeMailer(), new FakeMailer())->run();
+
+        self::assertSame(2, $summary['checks_ran']);
+        self::assertSame(0, $summary['deferred']);
+    }
+
     // --- Harness ----------------------------------------------------------
 
+    /**
+     * @param array<string, string> $overrides Extra/override config values.
+     */
     private function monitor(
         FakeMailer $delivery,
         FakeMailer $alerts,
         bool $failTransport = false,
         string $secret = self::MONITOR_SECRET,
-        ?string $configPath = null
+        ?string $configPath = null,
+        array $overrides = []
     ): MonitorService {
-        $config = Config::fromValues([
+        $config = Config::fromValues(array_merge([
             'APP_ENV'            => 'testing',
             'APP_SECRET'         => 'app-signing-secret',
             'MONITOR_SECRET'     => $secret,
@@ -243,13 +325,14 @@ final class MonitorServiceTest extends TestCase
             'RATE_IP_PER_MINUTE' => '1000',
             'RATE_FORM_PER_HOUR' => '1000',
             'MIN_SUBMIT_SECONDS' => '3',
-        ]);
+        ], $overrides));
 
         $app = AppFactory::create($config, $this->db, $this->dns, $this->clock, $delivery);
         $http = new InProcessHttpClient($app, self::BASE_URL);
         $http->failTransport = $failTransport;
 
         $hasher = new PasswordHasher(PASSWORD_BCRYPT);
+        $this->sleeper = new FakeSleeper($this->clock);
 
         return new MonitorService(
             $http,
@@ -261,7 +344,7 @@ final class MonitorServiceTest extends TestCase
             $config,
             new ConfigWriter($configPath ?? ($this->configDir . '/config.php')),
             $this->clock,
-            new FakeSleeper($this->clock)
+            $this->sleeper
         );
     }
 }

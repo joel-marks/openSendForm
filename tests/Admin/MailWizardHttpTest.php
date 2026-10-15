@@ -366,8 +366,8 @@ final class MailWizardHttpTest extends TestCase
         $body = (string) $this->get('/admin/mail')->getBody();
         // The findable cron block: anchor + both commands + the mark-done control.
         self::assertStringContainsString('id="cron"', $body);
-        self::assertStringContainsString('monitor:run', $body);
-        self::assertStringContainsString('mail:retry', $body);
+        self::assertStringContainsString('monitor:run --quiet', $body);
+        self::assertStringContainsString('mail:retry --quiet', $body);
         self::assertStringContainsString('action="/admin/mail/cron-done"', $body);
 
         // Mark them set up: persists CRON_SETUP=done.

@@ -34,6 +34,22 @@ final class MonitorService
     /** The body/subject marker so recipients can recognise and filter probes. */
     public const MARKER = '[OpenSendForm monitor]';
 
+    /**
+     * Seconds added to the configured min-submit-time before a probe POSTs, so
+     * the token ages just past the pipeline's bot check and no further. Small
+     * and derived from config — the probe never sleeps a fixed worst case.
+     */
+    private const MIN_SUBMIT_MARGIN_SECONDS = 1;
+
+    /**
+     * How many times a probe re-reads a not-yet-'sent' row after the immediate
+     * check. Delivery is synchronous in-request, so the immediate read almost
+     * always sees 'sent'; these are a short grace window. The poll interval is
+     * derived from the send timeout divided by this, so it tightens as the
+     * timeout shrinks.
+     */
+    private const DELIVERY_POLL_ATTEMPTS = 5;
+
     public function __construct(
         private HttpClient $http,
         private FormRepository $forms,
@@ -53,6 +69,10 @@ final class MonitorService
      * check the due forms (canary always + staggered others), record each
      * result and send one alert on any ok<->fail transition.
      *
+     * The canary is always checked first; once MONITOR_TIME_BUDGET_SECONDS of
+     * wall time has elapsed the run stops STARTING new (non-canary) checks and
+     * defers the rest to the next run. Deferral is not a failure.
+     *
      * @return array{
      *   secret_generated: bool,
      *   purged: int,
@@ -60,11 +80,14 @@ final class MonitorService
      *   failures: int,
      *   alerts_sent: int,
      *   alert_error: ?string,
+     *   deferred: int,
+     *   elapsed_seconds: int,
      *   results: array<int, array{form_id:int, form_name:string, ok:bool, detail:string}>
      * }
      */
     public function run(): array
     {
+        $startedAt = $this->clock->now();
         $secretGenerated = $this->effectiveSecret($secret);
 
         $cutoff = gmdate('Y-m-d H:i:s', $this->clock->now() - ($this->config->monitorRetentionDays() * 86400));
@@ -80,12 +103,23 @@ final class MonitorService
             $this->clock->now()
         );
 
+        $budget = $this->config->monitorTimeBudgetSeconds();
+
         $results = [];
         $failures = 0;
         $alertsSent = 0;
         $alertError = null;
+        $deferred = 0;
 
-        foreach ($formIds as $formId) {
+        foreach ($formIds as $index => $formId) {
+            // The canary (always first) runs unconditionally; every other form
+            // defers once the time budget is spent. Remaining forms are not
+            // failures — they are simply left for the next run.
+            if ($index > 0 && ($this->clock->now() - $startedAt) >= $budget) {
+                $deferred = count($formIds) - $index;
+                break;
+            }
+
             $form = $this->forms->findById($formId);
             if ($form === null || (int) $form['is_active'] !== 1) {
                 continue; // deactivated/deleted between planning and checking
@@ -122,6 +156,8 @@ final class MonitorService
             'failures'         => $failures,
             'alerts_sent'      => $alertsSent,
             'alert_error'      => $alertError,
+            'deferred'         => $deferred,
+            'elapsed_seconds'  => $this->clock->now() - $startedAt,
             'results'          => $results,
         ];
     }
@@ -225,7 +261,9 @@ final class MonitorService
         }
 
         // 2. Respect the min-submit-time bot check (token must age past it).
-        $this->sleeper->sleep($this->config->minSubmitSeconds() + 1);
+        // The wait is derived from the configured min-submit-time plus a small
+        // margin, so the probe sleeps no longer than the pipeline requires.
+        $this->sleeper->sleep($this->config->minSubmitSeconds() + self::MIN_SUBMIT_MARGIN_SECONDS);
 
         // 3. POST the marked submission.
         $baselineId = $this->submissions->maxSyntheticId((int) $form['id']);
@@ -272,7 +310,9 @@ final class MonitorService
     /**
      * Poll a stored submission until it reaches 'sent' or the send timeout
      * elapses. Delivery is synchronous-first, so the row is usually already
-     * 'sent' on the first read; the poll covers the async/failed cases.
+     * 'sent' on the first (immediate) read; the short re-checks that follow
+     * only cover the degenerate case where the row is still 'received' — which
+     * at timeout is an honest failure (delivery did not happen in-request).
      *
      * @return array{ok:bool, detail:string}
      */
@@ -282,9 +322,13 @@ final class MonitorService
             return $this->ok('delivered (submission #' . $submissionId . ')');
         }
 
-        $deadline = $this->clock->now() + $this->config->monitorSendTimeoutSeconds();
+        $timeout = $this->config->monitorSendTimeoutSeconds();
+        // Derive the poll interval from the timeout so the number of re-checks
+        // stays small and the interval tightens as the timeout shrinks.
+        $interval = max(1, intdiv($timeout, self::DELIVERY_POLL_ATTEMPTS));
+        $deadline = $this->clock->now() + $timeout;
         while ($this->clock->now() < $deadline) {
-            $this->sleeper->sleep(1);
+            $this->sleeper->sleep($interval);
             $row = $this->submissions->findById($submissionId);
             $status = $row === null ? 'missing' : (string) $row['status'];
             if ($status === 'sent') {

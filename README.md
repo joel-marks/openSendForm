@@ -222,7 +222,7 @@ already points SMTP at Mailpit (`SMTP_HOST=mailpit`, `SMTP_PORT=1025`).
 
 `php bin/osf submissions:list` shows the row move to status `sent`. If SMTP
 is unreachable it is left `failed` with a scheduled retry; `php bin/osf
-mail:retry` (wire it to cron on cPanel) re-sends everything due. A quick
+mail:retry --quiet` (wire it to cron on cPanel) re-sends everything due. A quick
 transport check without a submission: `php bin/osf mail:test --to=you@example.com`.
 
 ## Synthetic monitoring (optional, recommended)
@@ -241,13 +241,26 @@ submissions list (see the "synthetic" filter) and auto-purged after a couple of
 days. Wire it to cron on cPanel, hourly, alongside `mail:retry`:
 
 ```
-0 * * * * /usr/local/bin/php /home/USER/opensendform/bin/osf monitor:run
+0 * * * * /usr/local/bin/php /home/USER/opensendform/bin/osf monitor:run --quiet
 ```
 
+**Hourly is the recommended default.** The cron schedule is the knob: a
+lower-powered shared host can run `monitor:run` less often (say every few
+hours) with no config change — the canary is checked each run and every other
+form at most once per `MONITOR_FORM_INTERVAL_HOURS`, staggered, so a longer
+cron interval simply spaces things out further. Each run is also bounded by
+`MONITOR_TIME_BUDGET_SECONDS` (default 45): the canary always runs, then once
+the budget is spent any remaining forms defer to the next run rather than
+dragging the job out (a deferral is not a failure).
+
+The `--quiet` flag keeps cron silent unless a check failed, an alert was sent
+or an alert could not be sent — because cPanel emails any cron output, that
+turns the hourly job into a free failure-alert channel instead of hourly noise.
+
 `php bin/osf monitor:status` prints each form's last check, result and next due
-time. The base URL, secret, retention, interval, send timeout and alert
-recipient are all configurable via `MONITOR_*` settings (env or config file);
-the secret is generated and written back automatically on first run.
+time. The base URL, secret, retention, interval, send timeout, time budget and
+alert recipient are all configurable via `MONITOR_*` settings (env or config
+file); the secret is generated and written back automatically on first run.
 
 ## Cloudflare Turnstile (optional, per form)
 
@@ -647,6 +660,32 @@ The response is JSON by default and for any client that sends
 — a top-level navigation that prefers `text/html` — instead receives a
 self-contained HTML success/error page (the no-JS fallback); the JSON contract
 above is unchanged for API and `fetch` callers.
+
+## Troubleshooting
+
+**Too many emails from cron?** cPanel emails you whatever a cron job prints to
+stdout, and the OpenSendForm jobs used to print a summary on every run — so an
+hourly schedule meant hourly mail. The fix is the `--quiet` flag on both cron
+commands (`monitor:run --quiet` and `mail:retry --quiet`); the installer's
+*Scheduled tasks* step and the admin *Email* tab now emit them with it already
+added. Quiet runs print nothing when there is nothing to report, so you only
+get an email when something needs attention: a monitor check failed, an alert
+was sent (or couldn't be), or the retry sweep actually re-sent something. If you
+set up cron before this change, re-copy the commands from the *Email* tab.
+
+**Host resource warnings?** The hourly `monitor:run` is the heavier of the two
+jobs — it drives a real submission through the full pipeline (token fetch, a
+short min-submit-time wait, POST, and delivery) for each form it checks. A few
+things keep its cost bounded: delivery is synchronous, so a probe is usually
+confirmed `sent` the instant its POST returns (`MONITOR_SEND_TIMEOUT_SECONDS`
+defaults to 10 and is only a short grace window); and `MONITOR_TIME_BUDGET_SECONDS`
+(default 45) stops the run from *starting* new form checks once that much wall
+time is spent — the canary always runs, the rest defer to the next run. If your
+host still flags the job, run it less often: hourly is only the recommended
+default, and a schedule of every few hours works fine because non-canary forms
+are already checked at most once per `MONITOR_FORM_INTERVAL_HOURS`, staggered.
+The non-quiet `monitor:run` ends with a one-line `runtime:` summary (elapsed
+seconds, checks run/deferred) if you want to measure a run on your host.
 
 ## License
 MIT — see LICENSE.

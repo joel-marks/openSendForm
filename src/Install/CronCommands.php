@@ -15,6 +15,10 @@ namespace OpenSendForm\Install;
  * SAPI binary. bin/osf is resolved from the project root two levels up from
  * this file, so the paths point at wherever the app was extracted with no
  * manual entry.
+ *
+ * Both commands carry --quiet: cPanel emails whatever a cron job prints to
+ * stdout, so a quiet run that finds nothing noteworthy prints nothing and sends
+ * no mail. Output — and therefore an email — means something needs attention.
  */
 final class CronCommands
 {
@@ -41,12 +45,12 @@ final class CronCommands
     /** The synthetic-monitoring cron command, verbatim and copy-paste ready. */
     public static function monitorCommand(): string
     {
-        return self::phpBinary() . ' ' . self::osfPath() . ' monitor:run';
+        return self::phpBinary() . ' ' . self::osfPath() . ' monitor:run --quiet';
     }
 
     /** The mail-retry cron command, verbatim and copy-paste ready. */
     public static function retryCommand(): string
     {
-        return self::phpBinary() . ' ' . self::osfPath() . ' mail:retry';
+        return self::phpBinary() . ' ' . self::osfPath() . ' mail:retry --quiet';
     }
 }

@@ -130,8 +130,8 @@ final class InstallerHttpTest extends TestCase
         $sched = $this->get('/install/scheduled');
         self::assertSame(200, $sched->getStatusCode());
         $schedBody = (string) $sched->getBody();
-        self::assertStringContainsString('monitor:run', $schedBody);
-        self::assertStringContainsString('mail:retry', $schedBody);
+        self::assertStringContainsString('monitor:run --quiet', $schedBody);
+        self::assertStringContainsString('mail:retry --quiet', $schedBody);
         self::assertStringContainsString('Cron Jobs', $schedBody);
         $schedSubmit = $this->post('/install/scheduled', [
             '_csrf'  => $this->csrfFrom($sched),

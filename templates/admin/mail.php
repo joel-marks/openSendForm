@@ -119,7 +119,13 @@ use function OpenSendForm\Admin\icon;
     <p><small>Two small jobs keep OpenSendForm running: hourly monitoring of your
         forms, and an hourly retry of any emails that failed the first time. Add
         each as a cron job in cPanel (<strong>Cron Jobs</strong> → Once Per Hour),
-        setting the second job’s Minute to <code>5</code> so they don’t overlap.</small></p>
+        setting the second job’s Minute to <code>5</code> so they don’t overlap.
+        Hourly is recommended; a lower-powered host can run monitoring less often.</small></p>
+
+    <p><small>Both commands end in <code>--quiet</code>: cPanel emails whatever a
+        cron job prints, so a quiet run that finds nothing wrong prints nothing
+        and sends no mail — an email from one of these jobs means something needs
+        attention.</small></p>
 
     <h3>Job 1 — monitoring</h3>
     <p class="osf-copy">

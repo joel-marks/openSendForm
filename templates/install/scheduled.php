@@ -31,6 +31,17 @@ use function OpenSendForm\Admin\icon;
         server was briefly unreachable).</li>
 </ul>
 
+<div class="osf-flash osf-flash--info" role="status">
+    <p>The commands below end in <code>--quiet</code>. cPanel emails you
+        whatever a cron job prints, so a quiet run that finds nothing wrong
+        prints nothing and you get no mail — an email from one of these jobs
+        then means something actually needs your attention.</p>
+    <p><strong>Hourly</strong> is the recommended schedule. On a lower-powered
+        shared host you can run the monitoring job less often (say every few
+        hours) by choosing a different schedule in the next step; it still
+        spaces its per-form checks out on its own.</p>
+</div>
+
 <?php if (($error ?? '') !== ''): ?>
     <p class="osf-flash osf-flash--error" role="alert"><strong><?= h($error) ?></strong></p>
 <?php endif; ?>

@@ -261,7 +261,15 @@ final class Config
             // hours, its due times spread across forms (staggered).
             'MONITOR_FORM_INTERVAL_HOURS' => '24',
             // How long a check waits for the stored submission to reach 'sent'.
-            'MONITOR_SEND_TIMEOUT_SECONDS' => '30',
+            // Delivery is synchronous in-request, so a successful probe is
+            // 'sent' by the time its POST returns; the poll is a short grace
+            // window, not a long wait.
+            'MONITOR_SEND_TIMEOUT_SECONDS' => '10',
+            // Wall-time budget for one monitor:run. The canary always runs; once
+            // this many seconds have elapsed the run stops STARTING new form
+            // checks and defers the rest to the next run (deferral is not a
+            // failure). Caps the cron job's cost on busy or low-powered hosts.
+            'MONITOR_TIME_BUDGET_SECONDS'  => '45',
             // Where alert/recovery emails go. Empty = the first admin's email.
             'MONITOR_ALERT_EMAIL'        => '',
             // The base URL the monitor drives its real HTTP submissions against.
@@ -563,6 +571,16 @@ final class Config
     public function monitorSendTimeoutSeconds(): int
     {
         return max(1, (int) $this->get('MONITOR_SEND_TIMEOUT_SECONDS'));
+    }
+
+    /**
+     * Wall-time budget (seconds) for a single monitor:run. The canary check
+     * always runs; once this many seconds have elapsed the run stops starting
+     * new form checks and defers the remainder to the next run. At least 1.
+     */
+    public function monitorTimeBudgetSeconds(): int
+    {
+        return max(1, (int) $this->get('MONITOR_TIME_BUDGET_SECONDS'));
     }
 
     /**

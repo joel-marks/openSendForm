@@ -92,7 +92,7 @@ try {
         case 'admin:reset-2fa':
             exit(cmdAdminResetTotp($db, $args));
         case 'mail:retry':
-            exit(cmdMailRetry($db, $config));
+            exit(cmdMailRetry($db, $config, $args));
         case 'mail:test':
             exit(cmdMailTest($config, $args));
         case 'mail:status':
@@ -102,7 +102,7 @@ try {
         case 'submissions:purge':
             exit(cmdSubmissionsPurge($db, $args));
         case 'monitor:run':
-            exit(cmdMonitorRun($db, $config, $paths));
+            exit(cmdMonitorRun($db, $config, $paths, $args));
         case 'monitor:status':
             exit(cmdMonitorStatus($db, $config, $paths));
         default:
@@ -528,20 +528,37 @@ function promptHidden(string $label): string
  *
  * Intended for a cPanel cron entry. Prints a one-line summary and always
  * exits 0 so a transient mail outage never marks the cron job as failing.
+ *
+ * With --quiet it prints NOTHING when the sweep attempted no deliveries (the
+ * common "nothing due" case), and the full summary only when it attempted at
+ * least one. cPanel emails any cron stdout, so quiet turns the hourly job into
+ * a near-silent background task whose output means it actually did work.
  */
-function cmdMailRetry(Database $db, Config $config): int
+function cmdMailRetry(Database $db, Config $config, array $args): int
 {
+    $quiet = false;
+    foreach ($args as $arg) {
+        if ($arg === '--quiet') {
+            $quiet = true;
+        } else {
+            fwrite(STDERR, "Unknown option: {$arg}\n\n" . usage());
+            return 1;
+        }
+    }
+
     $delivery = buildDeliveryService($db, $config);
     $summary = $delivery->retryDue();
 
-    fwrite(STDOUT, sprintf(
-        "mail:retry — attempted %d: sent %d, failed %d, dead %d, skipped %d\n",
-        $summary['attempted'],
-        $summary[DeliveryService::RESULT_SENT],
-        $summary[DeliveryService::RESULT_FAILED],
-        $summary[DeliveryService::RESULT_DEAD],
-        $summary[DeliveryService::RESULT_SKIPPED]
-    ));
+    if (!$quiet || $summary['attempted'] > 0) {
+        fwrite(STDOUT, sprintf(
+            "mail:retry — attempted %d: sent %d, failed %d, dead %d, skipped %d\n",
+            $summary['attempted'],
+            $summary[DeliveryService::RESULT_SENT],
+            $summary[DeliveryService::RESULT_FAILED],
+            $summary[DeliveryService::RESULT_DEAD],
+            $summary[DeliveryService::RESULT_SKIPPED]
+        ));
+    }
 
     return 0;
 }
@@ -868,49 +885,90 @@ function cmdInstallStatus(): int
  * exits nonzero only when the monitor itself cannot operate: here, when an alert
  * email it needed to send could not be sent (cron output is then the backstop).
  *
+ * With --quiet it prints NOTHING to stdout when the run is unremarkable (no
+ * failed check, no alert sent, no alert-send failure); the full headed output
+ * appears only when something needs a human. cPanel emails any cron stdout, so
+ * quiet turns the hourly job into a free failure-alert channel: a mail means
+ * attention is needed. The nonzero alert-send-failure line always prints to
+ * stderr regardless, and exit codes are unchanged either way.
+ *
  * Recommended cPanel cron (hourly):
- *   0 * * * * /usr/local/bin/php /home/USER/opensendform/bin/osf monitor:run
+ *   0 * * * * /usr/local/bin/php /home/USER/opensendform/bin/osf monitor:run --quiet
  */
-function cmdMonitorRun(Database $db, Config $config, Paths $paths): int
+function cmdMonitorRun(Database $db, Config $config, Paths $paths, array $args): int
 {
+    $quiet = false;
+    foreach ($args as $arg) {
+        if ($arg === '--quiet') {
+            $quiet = true;
+        } else {
+            fwrite(STDERR, "Unknown option: {$arg}\n\n" . usage());
+            return 1;
+        }
+    }
+
     $monitor = buildMonitorService($db, $config, $paths);
     $summary = $monitor->run();
 
-    fwrite(STDOUT, "Monitoring run\n==============\n");
-    if ($summary['secret_generated']) {
-        fwrite(STDOUT, "Generated MONITOR_SECRET and wrote it to the config file.\n");
-    }
+    // Worth a human's attention: any check failed, any alert was sent, or an
+    // alert could not be sent. Under --quiet, only these print.
+    $noteworthy = $summary['failures'] > 0
+        || $summary['alerts_sent'] > 0
+        || $summary['alert_error'] !== null;
 
-    // Plain-language verdict for a non-technical operator, then the
-    // machine-parsable detail lines beneath.
-    if ($summary['checks_ran'] === 0) {
-        fwrite(STDOUT, "No forms yet — create your first form in the admin panel and monitoring will begin.\n");
-    } elseif ($summary['failures'] === 0) {
-        fwrite(STDOUT, "All checks passed — your forms are being monitored.\n");
-    } else {
+    if (!$quiet || $noteworthy) {
+        fwrite(STDOUT, "Monitoring run\n==============\n");
+        if ($summary['secret_generated']) {
+            fwrite(STDOUT, "Generated MONITOR_SECRET and wrote it to the config file.\n");
+        }
+
+        // Plain-language verdict for a non-technical operator, then the
+        // machine-parsable detail lines beneath.
+        if ($summary['checks_ran'] === 0) {
+            fwrite(STDOUT, "No forms yet — create your first form in the admin panel and monitoring will begin.\n");
+        } elseif ($summary['failures'] === 0) {
+            fwrite(STDOUT, "All checks passed — your forms are being monitored.\n");
+        } else {
+            fwrite(STDOUT, sprintf(
+                "PROBLEM: %d of %d checks failed — see the details below.\n",
+                $summary['failures'],
+                $summary['checks_ran']
+            ));
+        }
+
+        if ($summary['deferred'] > 0) {
+            fwrite(STDOUT, sprintf(
+                "Deferred %d form(s) to the next run (time budget reached) — not a failure.\n",
+                $summary['deferred']
+            ));
+        }
+
         fwrite(STDOUT, sprintf(
-            "PROBLEM: %d of %d checks failed — see the details below.\n",
+            "monitor:run — checked %d form(s): %d ok, %d failed; purged %d synthetic; %d alert(s) sent.\n",
+            $summary['checks_ran'],
+            $summary['checks_ran'] - $summary['failures'],
             $summary['failures'],
-            $summary['checks_ran']
+            $summary['purged'],
+            $summary['alerts_sent']
         ));
-    }
 
-    fwrite(STDOUT, sprintf(
-        "monitor:run — checked %d form(s): %d ok, %d failed; purged %d synthetic; %d alert(s) sent.\n",
-        $summary['checks_ran'],
-        $summary['checks_ran'] - $summary['failures'],
-        $summary['failures'],
-        $summary['purged'],
-        $summary['alerts_sent']
-    ));
+        foreach ($summary['results'] as $result) {
+            fwrite(STDOUT, sprintf(
+                "  [%s] #%d %s — %s\n",
+                $result['ok'] ? 'OK' : '--',
+                $result['form_id'],
+                $result['form_name'],
+                $result['detail']
+            ));
+        }
 
-    foreach ($summary['results'] as $result) {
+        // One-line runtime summary so future resource questions have data.
         fwrite(STDOUT, sprintf(
-            "  [%s] #%d %s — %s\n",
-            $result['ok'] ? 'OK' : '--',
-            $result['form_id'],
-            $result['form_name'],
-            $result['detail']
+            "runtime: %ds elapsed; %d check(s) run, %d deferred (budget %ds).\n",
+            $summary['elapsed_seconds'],
+            $summary['checks_ran'],
+            $summary['deferred'],
+            $config->monitorTimeBudgetSeconds()
         ));
     }
 
@@ -1023,12 +1081,12 @@ function usage(): string
       bin/osf admin:list
       bin/osf admin:delete ID
       bin/osf admin:reset-2fa ID
-      bin/osf mail:retry
+      bin/osf mail:retry [--quiet]
       bin/osf mail:test --to=ADDRESS
       bin/osf mail:status
       bin/osf submissions:list [--status=STATUS]
       bin/osf submissions:purge [--status=STATUS] [--form=ID]
-      bin/osf monitor:run
+      bin/osf monitor:run [--quiet]
       bin/osf monitor:status
       bin/osf install:status
       bin/osf migrate
@@ -1062,6 +1120,8 @@ function usage(): string
         submissions whose backoff has elapsed, plus never-attempted
         'received' submissions accepted while mail was disabled or SMTP was
         unavailable (intended for a cPanel cron entry); it always exits 0.
+        --quiet suppresses all output when nothing was due (cPanel mails any
+        cron stdout, so a quiet run stays silent unless it actually sent).
       mail:status prints the mail config state (no secrets) and runs live
         SPF/DKIM/DMARC DNS lookups for the From domain (skips when offline).
       submissions:list shows metadata only — never submitted content.
@@ -1075,10 +1135,14 @@ function usage(): string
         recipient), records each result, alerts on ok<->fail transitions and
         auto-purges expired synthetic submissions. It always exits 0 when checks
         ran (failures are alerted, not errors) and nonzero only when it cannot
-        alert. Recommended cPanel cron (hourly):
-          0 * * * * /usr/local/bin/php /home/USER/opensendform/bin/osf monitor:run
+        alert. A time budget (MONITOR_TIME_BUDGET_SECONDS) caps the run: the
+        canary always runs, then others defer to the next run once it is spent.
+        --quiet prints nothing unless a check failed, an alert was sent or an
+        alert could not be sent — so under cPanel the only mail you get is one
+        that needs attention. Recommended cPanel cron (hourly):
+          0 * * * * /usr/local/bin/php /home/USER/opensendform/bin/osf monitor:run --quiet
         (adjust the PHP path and project path for your host; the same style as
-        the mail:retry cron line.)
+        the mail:retry cron line. Lower-powered hosts can run it less often.)
       monitor:status prints each active form's last check, result and next due
         time; read-only.
       install:status reports whether the browser installer has run (config +

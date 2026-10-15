@@ -79,6 +79,39 @@ final class CliMonitorTest extends TestCase
         self::assertStringNotContainsString('Generated MONITOR_SECRET', $second['stdout']);
     }
 
+    public function testQuietRunWithNoFormsPrintsNothing(): void
+    {
+        // Nothing noteworthy (no failed check, no alert) -> --quiet prints
+        // nothing at all, so cPanel sends no mail. Exit code unchanged (0).
+        $result = $this->osf(['monitor:run', '--quiet']);
+
+        self::assertSame(0, $result['code'], $result['stderr']);
+        self::assertSame('', $result['stdout']);
+        self::assertSame('', $result['stderr']);
+
+        // The secret was still generated and written back, just silently.
+        $written = require $this->configPath;
+        self::assertNotSame('', (string) ($written['MONITOR_SECRET'] ?? ''));
+    }
+
+    public function testQuietRunStillRejectsUnknownOptions(): void
+    {
+        $result = $this->osf(['monitor:run', '--nope']);
+
+        self::assertSame(1, $result['code']);
+        self::assertStringContainsString('Unknown option: --nope', $result['stderr']);
+    }
+
+    public function testNonQuietRunWithNoFormsStillPrintsAndReportsRuntime(): void
+    {
+        $result = $this->osf(['monitor:run']);
+
+        self::assertSame(0, $result['code'], $result['stderr']);
+        self::assertStringContainsString('Monitoring run', $result['stdout']);
+        // The one-line runtime summary is present on non-quiet output.
+        self::assertStringContainsString('runtime:', $result['stdout']);
+    }
+
     private function markInstalled(): void
     {
         file_put_contents(

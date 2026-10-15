@@ -2245,3 +2245,58 @@ and operator-approved.
   it; the cron reminder self-clears on monitor_checks evidence). Out-of-scope
   items (Status tab, rebrand, embed/osf.js, frozen JSON contract, tokens.css
   VALUES) untouched.
+
+## 2026-10-15 — Fix: quiet cron mode + monitor:run cost (fix/cron-noise-and-monitor-cost)
+- Branch: fix/cron-noise-and-monitor-cost (off main). Trigger: a week of
+  live cPanel soak flooded the operator with cron mail (cPanel mails ALL
+  cron stdout and our CLI printed a headed summary every run) and raised
+  host resource-overuse warnings (the hourly monitor was an expensive,
+  long-lived PHP process). The operator deleted the cron jobs; this sprint
+  fixes the causes so they can be re-enabled.
+- **T1 Quiet cron mode.** `bin/osf mail:retry` and `monitor:run` now accept
+  `--quiet`: no stdout when the run is unremarkable, full existing output
+  only when something needs a human. mail:retry speaks when it attempted
+  anything (`attempted > 0`); monitor:run speaks when any check failed, any
+  alert was sent, or an alert could not be sent. Exit codes unchanged; the
+  nonzero "could not alert" line still goes to stderr regardless of --quiet.
+  `Install\CronCommands::monitorCommand()/retryCommand()` (the single source
+  for the installer step AND the admin Email `#cron` block) now bake in
+  `--quiet`; README, INSTALL.txt and both template blocks gained a sentence
+  on cPanel's mail-on-output behaviour ("output now means attention needed").
+- **T2 monitor:run cost.** (a) `MONITOR_SEND_TIMEOUT_SECONDS` default 30→10;
+  the delivery poll now does an immediate read then a few short re-checks at
+  an interval derived from the timeout (`timeout / 5`, min 1s) instead of
+  thirty 1s polls — delivery is synchronous so the immediate read nearly
+  always sees 'sent'; a row still 'received' at timeout is an honest failure.
+  (b) The pre-POST min-time wait is `MIN_SUBMIT_SECONDS + 1` (named
+  `MIN_SUBMIT_MARGIN_SECONDS`), derived from config, never a fixed worst case.
+  (c) New `MONITOR_TIME_BUDGET_SECONDS` (default 45): the canary always runs
+  first, then the run stops STARTING new form checks once the budget is spent
+  and defers the rest to the next run (deferral is not a failure; reflected in
+  the summary + output). (d) Non-quiet output ends with a one-line `runtime:`
+  summary (elapsed seconds, checks run/deferred, budget).
+- **T3 Cadence surfacing.** README, INSTALL.txt and the installer Scheduled
+  tasks step note that hourly is the recommended default and lower-powered
+  hosts can run monitor:run less often (the cron schedule is the knob;
+  `MONITOR_FORM_INTERVAL_HOURS` already spaces non-canary checks). No new
+  config for cadence.
+- **T4 Docs.** README gained a "Troubleshooting" section with "Too many emails
+  from cron?" (--quiet explanation) and "Host resource warnings?" (what
+  monitor:run costs, the time budget, cadence advice) entries.
+- Tests: MonitorServiceTest +5 (immediate-sent short-circuits the poll;
+  min-time wait derives from MIN_SUBMIT_SECONDS; row-still-received-at-timeout
+  fails with the derived poll cadence; time budget defers after the canary;
+  generous budget checks every form with no deferral). CliMonitorTest +3
+  (quiet no-forms prints nothing, unknown-option rejected, non-quiet prints
+  runtime). New CliMailRetryTest +4 (quiet silent when nothing due, quiet
+  prints when it attempted, non-quiet always prints, unknown-option rejected).
+  InstallerHttpTest + MailWizardHttpTest tightened to assert the emitted cron
+  commands include `--quiet`. Test results: **OK — 626 tests, 4011 assertions,
+  all green** (up from 614).
+- Deviations from prompt: none. Three non-blocking interpretive decisions
+  recorded in QUESTIONS.md (secret-generation is silent under --quiet per the
+  prescriptive noteworthy list; the derived poll interval = timeout/5;
+  monitor:status is unchanged — deferral surfaces in the run summary, and a
+  deferred form simply reads "due now" until the next run picks it up).
+  Out-of-scope items (alert state machine, the pipeline, embed, Status tab,
+  rebrand, tokens.css, frozen contract) untouched.

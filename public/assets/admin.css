@@ -813,12 +813,20 @@ input[type="checkbox"].osf-switch:focus-visible {
     outline-offset: 2px;
 }
 
-/* Label that pairs the switch with its text on one row. */
+/* Label that pairs the switch with its text on one row. Owns its vertical
+   rhythm at component level (like .osf-field) so a switch never collides with
+   adjacent copy — the old margin:0 let the mail toggle touch its hint. The
+   bottom gap separates the switch row from a following hint/control; it
+   collapses to nothing when the switch row is the last thing in its block. */
 .osf-switch-field {
     display: flex;
     align-items: center;
     gap: var(--osf-space-2);
-    margin: 0;
+    margin: 0 0 var(--osf-space-2);
+}
+
+.osf-switch-field:last-child {
+    margin-bottom: 0;
 }
 
 /* --- Password field with a show/hide toggle --------------------------- */

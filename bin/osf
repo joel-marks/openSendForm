@@ -591,8 +591,8 @@ function cmdMailTest(Config $config, array $args): int
         $mailer->send(
             $to,
             null,
-            'OpenSendForm test message',
-            "This is a test message from OpenSendForm.\n\n"
+            'openSendForm test message',
+            "This is a test message from openSendForm.\n\n"
             . "If you received it, your SMTP settings are working."
         );
     } catch (Throwable $e) {
@@ -774,7 +774,7 @@ function cmdMigrate(): int
     $paths = Paths::production();
 
     if (!$paths->isInstalled()) {
-        fwrite(STDERR, "OpenSendForm is not installed yet — run the browser installer first.\n");
+        fwrite(STDERR, "openSendForm is not installed yet — run the browser installer first.\n");
         return 1;
     }
 
@@ -814,7 +814,7 @@ function cmdMigrate(): int
  */
 function cmdVersion(): int
 {
-    fwrite(STDOUT, 'OpenSendForm ' . Version::STRING . "\n");
+    fwrite(STDOUT, 'openSendForm ' . Version::STRING . "\n");
 
     $paths = Paths::production();
     $dsnOverride = getenv('DB_DSN');
@@ -893,7 +893,7 @@ function cmdInstallStatus(): int
  * stderr regardless, and exit codes are unchanged either way.
  *
  * Recommended cPanel cron (hourly):
- *   0 * * * * /usr/local/bin/php /home/USER/opensendform/bin/osf monitor:run --quiet
+ *   0 * * * * /usr/local/bin/php /home/USER/osf-php/bin/osf monitor:run --quiet
  */
 function cmdMonitorRun(Database $db, Config $config, Paths $paths, array $args): int
 {
@@ -1067,7 +1067,7 @@ function buildDeliveryService(Database $db, Config $config): DeliveryService
 function usage(): string
 {
     return <<<TXT
-    OpenSendForm CLI
+    openSendForm CLI
 
     Usage:
       bin/osf form:create --name=NAME --recipient=EMAIL --origin=ORIGIN [--origin=ORIGIN ...]
@@ -1140,7 +1140,7 @@ function usage(): string
         --quiet prints nothing unless a check failed, an alert was sent or an
         alert could not be sent — so under cPanel the only mail you get is one
         that needs attention. Recommended cPanel cron (hourly):
-          0 * * * * /usr/local/bin/php /home/USER/opensendform/bin/osf monitor:run --quiet
+          0 * * * * /usr/local/bin/php /home/USER/osf-php/bin/osf monitor:run --quiet
         (adjust the PHP path and project path for your host; the same style as
         the mail:retry cron line. Lower-powered hosts can run it less often.)
       monitor:status prints each active form's last check, result and next due

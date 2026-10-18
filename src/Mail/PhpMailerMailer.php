@@ -40,13 +40,7 @@ final class PhpMailerMailer implements MailerInterface
         // Exceptions on: send() throws PhpMailerException on any failure.
         $mail = new PHPMailer(true);
 
-        $mail->isSMTP();
-        $mail->Host = $this->config->smtpHost();
-        $mail->Port = $this->config->smtpPort();
-        $mail->Timeout = self::TIMEOUT_SECONDS;
-
-        $this->applyEncryption($mail);
-        $this->applyAuthentication($mail);
+        $this->configure($mail);
 
         $mail->CharSet = PHPMailer::CHARSET_UTF8;
         $mail->isHTML(false);
@@ -68,6 +62,23 @@ final class PhpMailerMailer implements MailerInterface
             // on PHPMailer's exception type.
             throw new \RuntimeException('Mail delivery failed: ' . $e->getMessage(), 0, $e);
         }
+    }
+
+    /**
+     * Apply the SMTP connection settings (host, port, encryption and optional
+     * auth) to a PHPMailer instance, without touching the message or opening a
+     * socket. Exposed so the auth policy — anonymous when the username is empty
+     * — can be asserted in tests against a real PHPMailer object.
+     */
+    public function configure(PHPMailer $mail): void
+    {
+        $mail->isSMTP();
+        $mail->Host = $this->config->smtpHost();
+        $mail->Port = $this->config->smtpPort();
+        $mail->Timeout = self::TIMEOUT_SECONDS;
+
+        $this->applyEncryption($mail);
+        $this->applyAuthentication($mail);
     }
 
     private function applyEncryption(PHPMailer $mail): void

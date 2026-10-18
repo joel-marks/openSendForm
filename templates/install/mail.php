@@ -24,7 +24,7 @@ use function OpenSendForm\Admin\h;
 <h1>Set up email sending</h1>
 
 <p>
-    OpenSendForm delivers each form submission to you by email. Enter the details
+    openSendForm delivers each form submission to you by email. Enter the details
     of the mailbox it should send from — or skip this and set it up later; either
     way your setup finishes on the next screen.
 </p>

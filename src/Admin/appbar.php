@@ -46,8 +46,8 @@ if (!function_exists('OpenSendForm\\Admin\\appbar')) {
         // --- Row 1: brand surface -----------------------------------------
         // The brand is a link home only when signed in; otherwise inert text.
         $brand = $variant === 'full'
-            ? '<a class="osf-brand" href="/admin">OpenSendForm</a>'
-            : '<span class="osf-brand">OpenSendForm</span>';
+            ? '<a class="osf-brand" href="/admin">openSendForm</a>'
+            : '<span class="osf-brand">openSendForm</span>';
 
         $docs = '<a class="osf-nav-link osf-nav-docs" href="https://opensendform.com"'
             . ' target="_blank" rel="noopener">'
@@ -92,7 +92,8 @@ if (!function_exists('OpenSendForm\\Admin\\appbar')) {
                 . $tab('submissions', '/admin/submissions', 'Submissions', 'inbox')
                 . $tab('mail', '/admin/mail', 'Email', 'mail')
                 . $tab('deliverability', '/admin/deliverability', 'Deliverability', 'shield-check')
-                . $tab('admins', '/admin/admins', 'Admins', 'users');
+                . $tab('admins', '/admin/admins', 'Admins', 'users')
+                . $tab('status', '/admin/status', 'Status', 'activity');
         } else {
             $row2 = $stepLabel !== ''
                 ? '<span class="osf-appbar-step">' . h($stepLabel) . '</span>'

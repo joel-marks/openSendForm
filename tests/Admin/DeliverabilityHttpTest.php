@@ -52,9 +52,9 @@ final class DeliverabilityHttpTest extends TestCase
         $this->writeConfig([
             'APP_ENV'           => 'dev',
             'APP_SECRET'        => str_repeat('a', 64),
-            'SMTP_HOST'         => 'mail.example.com',
-            'MAIL_FROM_ADDRESS' => 'hello@example.com',
-            'MAIL_FROM_NAME'    => 'Example',
+            'SMTP_HOST'         => 'mail.acme.co',
+            'MAIL_FROM_ADDRESS' => 'hello@acme.co',
+            'MAIL_FROM_NAME'    => 'Acme',
         ]);
         $this->paths = Paths::underBase($this->base);
 
@@ -108,16 +108,33 @@ final class DeliverabilityHttpTest extends TestCase
     public function testRendersStatesAndRecommendations(): void
     {
         // SPF present; DKIM (default selector) and DMARC absent.
-        $this->dns->setTxt('example.com', ['v=spf1 include:_spf.example.com ~all']);
+        $this->dns->setTxt('acme.co', ['v=spf1 include:_spf.acme.co ~all']);
         $this->login();
 
         $body = (string) $this->get('/admin/deliverability')->getBody();
         self::assertStringContainsString('SPF', $body);
         self::assertStringContainsString('Published', $body);
         self::assertStringContainsString('Not found', $body);
-        // DMARC recommended starter seeded with the admin email, with a copy button.
-        self::assertStringContainsString('v=DMARC1; p=none; rua=mailto:' . self::ADMIN_EMAIL, $body);
-        self::assertStringContainsString('data-copy="v=DMARC1; p=none; rua=mailto:' . self::ADMIN_EMAIL . '"', $body);
+        // DMARC recommended starter seeded with the From domain's postmaster, with a copy button.
+        self::assertStringContainsString('v=DMARC1; p=none; rua=mailto:postmaster@acme.co', $body);
+        self::assertStringContainsString('data-copy="v=DMARC1; p=none; rua=mailto:postmaster@acme.co"', $body);
+    }
+
+    public function testPlaceholderFromDomainShowsPlaceholderNoticeNotRecords(): void
+    {
+        $this->writeConfig([
+            'APP_SECRET'        => str_repeat('a', 64),
+            'MAIL_FROM_ADDRESS' => 'noreply@example.test',
+            'MAIL_FROM_NAME'    => 'E',
+        ]);
+        $this->buildApp();
+        $this->login();
+
+        $body = (string) $this->get('/admin/deliverability')->getBody();
+        self::assertStringContainsString('looks like a placeholder', $body);
+        // No DNS records are suggested for a placeholder domain.
+        self::assertStringNotContainsString('v=DMARC1', $body);
+        self::assertStringNotContainsString('Add this TXT record', $body);
     }
 
     public function testEachResultNamesItsSource(): void
@@ -126,7 +143,7 @@ final class DeliverabilityHttpTest extends TestCase
         $body = (string) $this->get('/admin/deliverability')->getBody();
         // Every check states it is a live DNS lookup of a named record.
         self::assertStringContainsString('Source: live DNS lookup of the', $body);
-        self::assertStringContainsString('_dmarc.example.com', $body);
+        self::assertStringContainsString('_dmarc.acme.co', $body);
     }
 
     public function testStatesRecordsConcernSendingDomainOnly(): void
@@ -139,7 +156,7 @@ final class DeliverabilityHttpTest extends TestCase
 
     public function testRecheckHonoursSelector(): void
     {
-        $this->dns->setTxt('s1._domainkey.example.com', ['v=DKIM1; k=rsa; p=abc']);
+        $this->dns->setTxt('s1._domainkey.acme.co', ['v=DKIM1; k=rsa; p=abc']);
         $this->login();
 
         $body = (string) $this->get('/admin/deliverability', ['dkim_selector' => 's1'])->getBody();

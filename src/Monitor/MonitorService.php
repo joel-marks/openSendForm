@@ -32,7 +32,7 @@ use Throwable;
 final class MonitorService
 {
     /** The body/subject marker so recipients can recognise and filter probes. */
-    public const MARKER = '[OpenSendForm monitor]';
+    public const MARKER = '[openSendForm monitor]';
 
     /**
      * Seconds added to the configured min-submit-time before a probe POSTs, so
@@ -413,13 +413,13 @@ final class MonitorService
                 . 'Time:   ' . $checkedAt . " UTC\n"
                 . 'Detail: ' . $detail . "\n\n"
                 . "Visitors may be unable to submit this form, or their submissions may not be\n"
-                . "reaching you. This is an automated alert from OpenSendForm synthetic monitoring.";
+                . "reaching you. This is an automated alert from openSendForm synthetic monitoring.";
         } else {
             $body = "A form that was previously failing is working again.\n\n"
                 . 'Form:   ' . $name . ' (#' . (int) $form['id'] . ")\n"
                 . 'Time:   ' . $checkedAt . " UTC\n"
                 . 'Detail: ' . $detail . "\n\n"
-                . "This is an automated recovery notice from OpenSendForm synthetic monitoring.";
+                . "This is an automated recovery notice from openSendForm synthetic monitoring.";
         }
 
         $this->mailer->send($to, null, $subject, $body);

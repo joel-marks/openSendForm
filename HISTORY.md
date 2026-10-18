@@ -2300,3 +2300,62 @@ and operator-approved.
   deferred form simply reads "due now" until the next run picks it up).
   Out-of-scope items (alert state machine, the pipeline, embed, Status tab,
   rebrand, tokens.css, frozen contract) untouched.
+
+## 2026-10-18 — Status tab + rebrand (feature/status-tab-and-rebrand)
+- Branch: feature/status-tab-and-rebrand (off main). The final build sprint
+  before v0.2.0: the Status tab, the openSendForm/osf-php rebrand, and four
+  operator-verification defects. Authorised Composer deps: none (none added).
+- **Status tab (task 1).** New rightmost nav tab "Status" (Lucide `activity`
+  icon) at `/admin/status` → `Admin\StatusController`. Logic lives in a testable
+  `Admin\StatusReport`:
+  - Environment: re-probes live every view (no caching) via the installer's
+    `Install\Requirements` + `SystemProbe` (PHP vs required, extensions, var/
+    writability) plus an added live DB-reachability row, rendered with the same
+    pass/warn/fail badges (fail = red).
+  - Security: the viewing admin's 2FA state (red `osf-flash--error` + setup link
+    when off) and a world-writable app-directory probe (0002 bit; red when found).
+  - Mail: configured yes/no + sending on/off, then the FULL deliverability
+    readout rendered from the shared partial (see below) — not forked.
+  - Operations: app version, schema version (max applied), pending migrations,
+    monitor last-run + result from `monitor_checks` with a red "has not run
+    recently" state when the newest check is older than 2× the hourly cadence
+    (`MonitorRepository::latest()` added), and CRON_SETUP state.
+  - Tests: `StatusHttpTest` (rows render, red failure states, 2FA on/off,
+    world-writable red, stale/fresh monitor, shared-deliverability + single
+    markup source) and `StatusReportTest` (stale-cron + world-writable logic).
+- **Rebrand (task 2).** Display name → "openSendForm" everywhere user-facing
+  (appbar brand, installer/admin copy, From-name default, monitor marker +
+  alerts, test-email subjects, CLI banner/usage/version, curl remedy, generated
+  config header). Page titles stay `osf - {page}`. README rewritten up front as
+  a PHP form-to-email app for shared hosting, short-form `osf-php` introduced.
+  Release folder → `osf-php/`, zip → `osf-php-vX.Y.Z.zip` (build/verify/CI/
+  INSTALL.txt/README/cron examples). composer name → `opensendform/osf-php`;
+  package.json description aligned. `Version` 0.1.0 → 0.2.0. PHP namespace
+  `OpenSendForm`, all code identifiers, the embed osf.js and source/asset header
+  comments are EXEMPT and unchanged; state files kept as records.
+- **Switch rhythm (task 3).** `.osf-switch-field` had `margin:0` and collided
+  with adjacent copy; it now owns component-level bottom rhythm (like
+  `.osf-field`), collapsing at `:last-child`. Mail + admins switches verified.
+- **Optional SMTP auth (task 4).** Username/password are optional (anonymous
+  relays / Mailpit): empty username = no auth (already honoured by
+  `PhpMailerMailer`; now covered by `PhpMailerMailerAuthTest` via a new
+  `configure()` seam). Admin page + installer step reject a password with no
+  username in clear language and save fine with empty auth; From stays required.
+- **Mail conveniences (task 5).** Deliverability skips placeholder/reserved From
+  domains (localhost, example.*, .test/.invalid/.local/…), stating plainly that
+  checks apply to real domains; the DMARC rua now references the From domain's
+  own postmaster, not a borrowed/fabricated mailbox. A dev-only "Fill with local
+  test settings (Mailpit)" link (+ a ? help link) was added to the shared
+  mail-fields partial, driven by admin.js, hidden in production — shown on both
+  the admin page and the installer step; both visibility states tested.
+- **Deliverability sharing.** The results readout was extracted to
+  `templates/admin/_deliverability.php`; the Deliverability tab and the Status
+  page both require it (one markup source, asserted by a test).
+- **Test results:** full suite **OK — 666 tests, 4124 assertions** (from 626).
+- **Release proof:** `php bin/build-release.php` then `php bin/verify-release.php`
+  against committed HEAD both pass — builds `dist/osf-php-v0.2.0.zip` (single
+  top-level `osf-php/` folder) and verifies all release checks.
+- **Deviations / notes:** package.json `name` left as `opensendform-dev-tools`
+  (the task said it was "already osf-scoped" — it was not; description aligned,
+  name left per the literal instruction) — logged in QUESTIONS.md. osf.js and
+  source/asset header comments deliberately out of scope.

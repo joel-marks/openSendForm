@@ -393,3 +393,40 @@ non-blocking interpretive decisions recorded for review:
    naturally reflects a deferred form still awaiting its next run, so no change
    was made there. Flag if monitor:status should explicitly label forms deferred
    by the most recent run (would need to persist per-run deferral state).
+
+## Status tab + rebrand (2026-10-18, feature/status-tab-and-rebrand)
+
+All tasks were prescriptive and implemented as ruled; no blockers. Interpretive
+decisions recorded for review:
+
+1. **package.json `name` mismatch.** Task 2c said "package.json name already
+   osf-scoped — align description". It is not: the name is
+   `opensendform-dev-tools`. Following the literal instruction, the description
+   was aligned to "openSendForm (osf-php)" and the **name was left unchanged**.
+   If the intent was to also rename it (e.g. `osf-php-dev-tools`), say so and it
+   is a one-line change. The field is a private dev-only manifest, never shipped.
+
+2. **composer `name` chosen as `opensendform/osf-php`.** Task 2c said to update
+   the name; the short form is `osf-php`, so vendor `opensendform` + package
+   `osf-php`. Flag if a different vendor/package was intended. (The PSR-4
+   namespace `OpenSendForm\` is untouched — exempt.)
+
+3. **Rebrand scope — what was deliberately NOT changed.** Per the exemptions,
+   the PHP namespace `OpenSendForm` and all code identifiers were kept. The
+   embed `public/embed/osf.js` (explicitly out of scope) and non-user-facing
+   source/asset file-header comments (e.g. `tokens.css`, `admin.js`,
+   `public/.htaccess` brand headers, PHP doc-comments) retain their existing
+   casing. User-facing UI/email/CLI/doc text, the generated config-file header,
+   and the three deny-all `.htaccess` folder references were aligned. Flag if a
+   full literal sweep (including comments) was wanted.
+
+4. **Monitor staleness threshold.** "~2× the expected hourly cadence" was
+   implemented as `EXPECTED_CADENCE_SECONDS = 3600`, `STALE_FACTOR = 2` (newest
+   check older than 7200s ⇒ red "has not run recently"). The hourly cadence is
+   the recommended cron; a host deliberately running `monitor:run` less often
+   than every two hours will read as stale on the Status page. Constants are in
+   `Admin\StatusReport` if a different window is wanted.
+
+5. **World-writable probe scope.** `StatusController` checks the shipped code
+   trees (root, src, public, templates, bin) plus `var/` and `var/data/` for the
+   other-write (0002) bit. Flag if a different directory set is intended.

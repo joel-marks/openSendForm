@@ -3,7 +3,7 @@
 # The recommended setup points the domain's document root at public/, so this
 # directory already sits OUTSIDE the web root and can never be requested. This
 # file is the safety net for hosts that don't let you move the document root:
-# when the whole opensendform/ folder is the web root, these rules make sure a
+# when the whole osf-php/ folder is the web root, these rules make sure a
 # browser can't fetch the server-side files kept here.
 
 # Apache 2.4 and newer: deny every request.

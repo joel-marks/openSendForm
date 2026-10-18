@@ -11,7 +11,11 @@ use PHPUnit\Framework\TestCase;
 /**
  * The SPF/DKIM/DMARC checker, driven entirely through the scriptable
  * FakeDnsResolver so no lookup ever touches the network. Covers present /
- * absent / malformed states and the exact recommended-record text.
+ * absent / malformed states, the exact recommended-record text, and the
+ * placeholder-domain short-circuit (localhost, example.*, reserved TLDs).
+ *
+ * A real, non-reserved sending domain (acme.co) is used throughout so the
+ * checker actually produces advice; the placeholder cases use reserved names.
  */
 final class DeliverabilityCheckerTest extends TestCase
 {
@@ -31,9 +35,9 @@ final class DeliverabilityCheckerTest extends TestCase
 
     public function testSpfPresentIsGreenAndReturnsTheRecord(): void
     {
-        $this->dns->setTxt('example.com', ['v=spf1 include:_spf.host.com ~all']);
+        $this->dns->setTxt('acme.co', ['v=spf1 include:_spf.host.com ~all']);
 
-        $spf = $this->checker()->check('hello@example.com', 'admin@example.com')['spf'];
+        $spf = $this->checker()->check('hello@acme.co', 'admin@acme.co')['spf'];
 
         self::assertTrue($spf['ok']);
         self::assertSame('present', $spf['state']);
@@ -43,7 +47,7 @@ final class DeliverabilityCheckerTest extends TestCase
     public function testSpfAbsentIsAmberWithRecommendedRecord(): void
     {
         // No TXT at the domain at all.
-        $spf = $this->checker()->check('hello@example.com', 'admin@example.com', 'default', 'mail.hostgator.com')['spf'];
+        $spf = $this->checker()->check('hello@acme.co', 'admin@acme.co', 'default', 'mail.hostgator.com')['spf'];
 
         self::assertFalse($spf['ok']);
         self::assertSame('absent', $spf['state']);
@@ -55,9 +59,9 @@ final class DeliverabilityCheckerTest extends TestCase
     public function testSpfMalformedRecordCountsAsAbsent(): void
     {
         // A TXT exists but is not an SPF record (no v=spf1 prefix).
-        $this->dns->setTxt('example.com', ['google-site-verification=abc123']);
+        $this->dns->setTxt('acme.co', ['google-site-verification=abc123']);
 
-        $spf = $this->checker()->check('hello@example.com', 'admin@example.com')['spf'];
+        $spf = $this->checker()->check('hello@acme.co', 'admin@acme.co')['spf'];
 
         self::assertFalse($spf['ok']);
         self::assertSame('absent', $spf['state']);
@@ -65,10 +69,10 @@ final class DeliverabilityCheckerTest extends TestCase
 
     public function testSpfRecommendationWithoutUsableSmtpHostOmitsInclude(): void
     {
-        $spf = $this->checker()->check('hello@example.com', 'admin@example.com', 'default', 'localhost')['spf'];
+        $spf = $this->checker()->check('hello@acme.co', 'admin@acme.co', 'default', 'localhost')['spf'];
         self::assertSame('v=spf1 a mx ~all', $spf['recommended']);
 
-        $spfNoHost = $this->checker()->check('hello@example.com', 'admin@example.com', 'default', '')['spf'];
+        $spfNoHost = $this->checker()->check('hello@acme.co', 'admin@acme.co', 'default', '')['spf'];
         self::assertSame('v=spf1 a mx ~all', $spfNoHost['recommended']);
     }
 
@@ -76,9 +80,9 @@ final class DeliverabilityCheckerTest extends TestCase
 
     public function testDkimFoundAtSelector(): void
     {
-        $this->dns->setTxt('default._domainkey.example.com', ['v=DKIM1; k=rsa; p=MIGfMA0BiQ']);
+        $this->dns->setTxt('default._domainkey.acme.co', ['v=DKIM1; k=rsa; p=MIGfMA0BiQ']);
 
-        $dkim = $this->checker()->check('hello@example.com', 'admin@example.com', 'default')['dkim'];
+        $dkim = $this->checker()->check('hello@acme.co', 'admin@acme.co', 'default')['dkim'];
 
         self::assertTrue($dkim['ok']);
         self::assertSame('found', $dkim['state']);
@@ -87,10 +91,10 @@ final class DeliverabilityCheckerTest extends TestCase
 
     public function testDkimNotFoundForMissingSelector(): void
     {
-        $this->dns->setTxt('default._domainkey.example.com', ['v=DKIM1; k=rsa; p=key']);
+        $this->dns->setTxt('default._domainkey.acme.co', ['v=DKIM1; k=rsa; p=key']);
 
         // A different selector has no record.
-        $dkim = $this->checker()->check('hello@example.com', 'admin@example.com', 's1')['dkim'];
+        $dkim = $this->checker()->check('hello@acme.co', 'admin@acme.co', 's1')['dkim'];
 
         self::assertFalse($dkim['ok']);
         self::assertSame('not_found', $dkim['state']);
@@ -99,7 +103,7 @@ final class DeliverabilityCheckerTest extends TestCase
 
     public function testDkimSelectorIsNormalisedAndDefaulted(): void
     {
-        $report = $this->checker()->check('hello@example.com', 'admin@example.com', 'BAD SELECTOR!');
+        $report = $this->checker()->check('hello@acme.co', 'admin@acme.co', 'BAD SELECTOR!');
         // Invalid selectors fall back to 'default'.
         self::assertSame('default', $report['selector']);
     }
@@ -108,36 +112,88 @@ final class DeliverabilityCheckerTest extends TestCase
 
     public function testDmarcPresentIsGreen(): void
     {
-        $this->dns->setTxt('_dmarc.example.com', ['v=DMARC1; p=reject; rua=mailto:dmarc@example.com']);
+        $this->dns->setTxt('_dmarc.acme.co', ['v=DMARC1; p=reject; rua=mailto:dmarc@acme.co']);
 
-        $dmarc = $this->checker()->check('hello@example.com', 'admin@example.com')['dmarc'];
+        $dmarc = $this->checker()->check('hello@acme.co', 'admin@acme.co')['dmarc'];
 
         self::assertTrue($dmarc['ok']);
         self::assertSame('present', $dmarc['state']);
     }
 
-    public function testDmarcAbsentRecommendsStarterWithAdminRua(): void
+    public function testDmarcAbsentRecommendsStarterWithPostmasterRua(): void
     {
-        $dmarc = $this->checker()->check('hello@example.com', 'boss@example.com')['dmarc'];
+        $dmarc = $this->checker()->check('hello@acme.co', 'boss@acme.co')['dmarc'];
 
         self::assertFalse($dmarc['ok']);
         self::assertSame('_dmarc', $dmarc['name']);
-        self::assertSame('v=DMARC1; p=none; rua=mailto:boss@example.com', $dmarc['recommended']);
+        // The rua points at the From domain's own postmaster — a real,
+        // owner-controlled mailbox — not a fabricated or borrowed address.
+        self::assertSame('v=DMARC1; p=none; rua=mailto:postmaster@acme.co', $dmarc['recommended']);
     }
 
-    public function testDmarcRecommendationOmitsRuaWhenAdminEmailInvalid(): void
+    public function testDmarcRuaUsesFromDomainNotTheAdminEmail(): void
     {
-        $dmarc = $this->checker()->check('hello@example.com', 'not-an-email')['dmarc'];
-        self::assertSame('v=DMARC1; p=none', $dmarc['recommended']);
+        // The admin email is at a different domain (and here even invalid): it
+        // must not leak into the rua, which always references the From domain.
+        $dmarc = $this->checker()->check('hello@acme.co', 'not-an-email')['dmarc'];
+        self::assertSame('v=DMARC1; p=none; rua=mailto:postmaster@acme.co', $dmarc['recommended']);
+    }
+
+    // --- Placeholder / invalid domains ------------------------------------
+
+    public function testPlaceholderDomainFlagsPlaceholderAndOffersNoLookup(): void
+    {
+        // example.com is an RFC 2606 placeholder: real-looking email, no real DNS.
+        $this->dns->setTxt('example.com', ['v=spf1 ~all']); // would be a false positive if looked up
+        $report = $this->checker()->check('hello@example.com', 'admin@acme.co');
+
+        self::assertTrue($report['placeholder']);
+        self::assertFalse($report['valid']);
+        self::assertSame('example.com', $report['domain']);
+        // No lookup is performed, so nothing reads as published despite the TXT above.
+        self::assertFalse($report['spf']['ok']);
+        self::assertFalse($report['dkim']['ok']);
+        self::assertFalse($report['dmarc']['ok']);
+    }
+
+    /**
+     * @dataProvider placeholderDomains
+     */
+    public function testIsPlaceholderDomainClassifiesReservedNames(string $domain, bool $expected): void
+    {
+        self::assertSame($expected, DeliverabilityChecker::isPlaceholderDomain($domain));
+    }
+
+    /**
+     * @return array<string, array{0:string, 1:bool}>
+     */
+    public static function placeholderDomains(): array
+    {
+        return [
+            'bare localhost'        => ['localhost', true],
+            'sub of localhost'      => ['mail.localhost', true],
+            'localhost.com'         => ['localhost.com', true],
+            'sub of localhost.com'  => ['app.localhost.com', true],
+            'example.com'           => ['example.com', true],
+            'example.org'           => ['example.org', true],
+            'example.anything'      => ['example.io', true],
+            'reserved test TLD'     => ['acme.test', true],
+            'reserved invalid TLD'  => ['acme.invalid', true],
+            'reserved local TLD'    => ['printer.local', true],
+            'real .co'              => ['acme.co', false],
+            'real multi-label'      => ['sub.example.co.uk', false],
+            'empty'                 => ['', false],
+        ];
     }
 
     // --- Domain handling --------------------------------------------------
 
     public function testInvalidFromAddressMakesReportInvalidAndSkipsLookups(): void
     {
-        $report = $this->checker()->check('not-an-email', 'admin@example.com');
+        $report = $this->checker()->check('not-an-email', 'admin@acme.co');
 
         self::assertFalse($report['valid']);
+        self::assertFalse($report['placeholder']);
         self::assertSame('', $report['domain']);
         // Absent everywhere, but no crash and no record text needing a domain.
         self::assertFalse($report['spf']['ok']);
@@ -147,7 +203,7 @@ final class DeliverabilityCheckerTest extends TestCase
 
     public function testDomainOfExtractsAndLowercases(): void
     {
-        self::assertSame('example.com', DeliverabilityChecker::domainOf('Hello@Example.COM'));
+        self::assertSame('acme.co', DeliverabilityChecker::domainOf('Hello@Acme.CO'));
         self::assertSame('', DeliverabilityChecker::domainOf('garbage'));
         self::assertSame('', DeliverabilityChecker::domainOf(''));
     }

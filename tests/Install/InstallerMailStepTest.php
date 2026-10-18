@@ -131,6 +131,31 @@ final class InstallerMailStepTest extends TestCase
         self::assertStringContainsString('SMTP host', (string) $response->getBody());
     }
 
+    public function testSaveRejectsPasswordWithoutUsername(): void
+    {
+        $mailPage = $this->get('/install/mail');
+        $response = $this->post('/install/mail', [
+            '_csrf'             => $this->csrfFrom($mailPage),
+            'action'            => 'save',
+            'smtp_host'         => 'mail.example.com',
+            'smtp_port'         => '465',
+            'smtp_encryption'   => 'smtps',
+            'smtp_user'         => '',
+            'smtp_pass'         => 'orphan-password',
+            'mail_from_address' => 'hello@example.com',
+            'mail_from_name'    => 'Example',
+        ]);
+        self::assertSame(422, $response->getStatusCode());
+        self::assertStringContainsString('Enter a username to use with that password', (string) $response->getBody());
+    }
+
+    public function testMailpitPrefillLinkShownInDev(): void
+    {
+        $body = (string) $this->get('/install/mail')->getBody();
+        self::assertStringContainsString('data-mailpit-prefill', $body);
+        self::assertStringContainsString('Fill with local test settings (Mailpit)', $body);
+    }
+
     public function testTestSendUsesEnteredSettingsAndStaysOnStep(): void
     {
         $mailPage = $this->get('/install/mail');

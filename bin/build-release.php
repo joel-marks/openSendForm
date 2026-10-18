@@ -14,8 +14,8 @@ declare(strict_types=1);
  *   3. Prunes the exclusion list (tests, CI/dev config, state files, …).
  *   4. Writes INSTALL.txt and vendor/.htaccess (vendor/ is not tracked, so its
  *      deny rule can't be committed and is written here instead).
- *   5. Zips everything under a single top-level opensendform/ folder to
- *      dist/opensendform-v{VERSION}.zip, where VERSION is read from
+ *   5. Zips everything under a single top-level osf-php/ folder to
+ *      dist/osf-php-v{VERSION}.zip, where VERSION is read from
  *      src/Version.php — the one place the version is defined.
  *
  * The exclusion list below is the authoritative build-side copy;
@@ -73,27 +73,28 @@ function osf_build_exclusions(): array
 function osf_build_install_txt(string $version): string
 {
     return <<<TXT
-    OpenSendForm {$version}
-    =========================
+    openSendForm (osf-php) {$version}
+    ==================================
 
-    Free, self-hostable form-to-email for shared cPanel/PHP hosting.
+    openSendForm — a free, self-hostable PHP form-to-email app for shared
+    cPanel/PHP hosting.
 
     INSTALL (first time)
     --------------------
     1. UPLOAD & EXTRACT FIRST. Upload this zip to your hosting account and
        extract it there (cPanel: File Manager -> Upload, then Extract). You get
-       one folder, "opensendform/", containing "bin", "public", "src", "var"
+       one folder, "osf-php/", containing "bin", "public", "src", "var"
        and others. Do this before touching any domain settings.
 
     2. FIND WHERE IT LANDED. You do not need to know absolute paths — look in
-       File Manager for the "opensendform" folder you just extracted (it is the
+       File Manager for the "osf-php" folder you just extracted (it is the
        folder that contains both "bin" and "public"). If you are unsure where
        your host keeps sites, cPanel's own Cron Jobs page shows an example path
        to your home directory.
 
     3. FIX PERMISSIONS. Some hosts extract zips with the wrong permissions,
        which can leave the app unable to run or, worse, expose files. From
-       inside the "opensendform" folder (File Manager's Terminal, or SSH), run:
+       inside the "osf-php" folder (File Manager's Terminal, or SSH), run:
 
            find . -type d -exec chmod 755 {} \\;
            find . -type f -exec chmod 644 {} \\;
@@ -106,17 +107,17 @@ function osf_build_install_txt(string $version): string
 
        a) Dedicated document root (RECOMMENDED). In cPanel -> Domains (or
           "Addon/Subdomains"), set the domain's Document Root to the "public"
-          folder INSIDE the extracted folder (e.g. .../opensendform/public).
+          folder INSIDE the extracted folder (e.g. .../osf-php/public).
           Only public/ is ever web-served; everything else stays private.
 
        b) Shared public_html. If you cannot change the document root, move the
-          CONTENTS of "opensendform/" into public_html so that public_html
+          CONTENTS of "osf-php/" into public_html so that public_html
           holds "bin", "public", "src", "var", etc. The bundled .htaccess files
           then keep the non-public folders private on Apache hosts.
 
     5. VERIFY HTTPS. Make sure the domain has a valid certificate before you
        finish setup (cPanel -> SSL/TLS Status, or "AutoSSL" — run it and wait
-       for the padlock). OpenSendForm's sessions and tokens are safest over
+       for the padlock). openSendForm's sessions and tokens are safest over
        HTTPS.
 
     6. RUN THE WIZARD. Visit the site in a browser; every page redirects to
@@ -168,7 +169,7 @@ function osf_build_vendor_htaccess(): string
     # vendor/ holds third-party PHP libraries and must never be served over
     # HTTP. Under the recommended layout (document root at public/) it already
     # sits outside the web root; this file is the safety net for hosts where the
-    # whole opensendform/ folder is the document root.
+    # whole osf-php/ folder is the document root.
 
     # Apache 2.4 and newer: deny every request.
     <IfModule mod_authz_core.c>
@@ -188,10 +189,10 @@ function osf_build_main(): int
 {
     $projectRoot = dirname(__DIR__);
     $version = osf_release_version($projectRoot . '/src/Version.php');
-    $folder = 'opensendform';
+    $folder = 'osf-php';
 
     $distDir = $projectRoot . '/dist';
-    $zipPath = $distDir . '/opensendform-v' . $version . '.zip';
+    $zipPath = $distDir . '/osf-php-v' . $version . '.zip';
 
     // A unique-enough temp workspace without Date/random (unavailable): the PID.
     $work = sys_get_temp_dir() . '/osf-build-' . getmypid();
@@ -203,7 +204,7 @@ function osf_build_main(): int
     $exportRoot = $work . '/' . $folder;
 
     try {
-        fwrite(STDOUT, "Building OpenSendForm v{$version}\n");
+        fwrite(STDOUT, "Building openSendForm v{$version}\n");
 
         // 1. Clean export of committed HEAD via git archive piped into tar.
         fwrite(STDOUT, "  - git archive HEAD -> {$exportRoot}\n");

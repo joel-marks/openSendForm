@@ -38,7 +38,7 @@ $rows = [
     ],
 ];
 ?>
-<h1>OpenSendForm is installed 🎉</h1>
+<h1>openSendForm is installed 🎉</h1>
 
 <p>Here’s where things stand. Anything not finished can be done later from the
     admin panel.</p>

@@ -2,7 +2,7 @@
   "name": "opensendform-dev-tools",
   "version": "0.1.0",
   "private": true,
-  "description": "DEV-ONLY tooling for OpenSendForm. Not part of the release zip (production has no Node/build step). Currently: Playwright, used by the tests/browser/ real-Firefox pixel checks.",
+  "description": "DEV-ONLY tooling for openSendForm (osf-php). Not part of the release zip (production has no Node/build step). Currently: Playwright, used by the tests/browser/ real-Firefox pixel checks.",
   "scripts": {
     "header-check": "node tests/browser/header-surface-check.mjs"
   },

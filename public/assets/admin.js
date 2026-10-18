@@ -438,6 +438,33 @@
         });
     }
 
+    // --- Dev-only Mailpit prefill -------------------------------------
+    // Fills the mail form with the local Mailpit test settings in one click.
+    // Nothing is locked: every value stays editable. The link is only present
+    // in non-production builds (the template gates it), so this is a no-op in
+    // production where the element is absent.
+    function initMailpitPrefill() {
+        var link = document.querySelector('[data-mailpit-prefill]');
+        if (!link) {
+            return;
+        }
+        link.addEventListener('click', function (event) {
+            event.preventDefault();
+            var set = function (id, value) {
+                var el = document.getElementById(id);
+                if (el) {
+                    el.value = value;
+                }
+            };
+            set('smtp_host', 'mailpit');
+            set('smtp_port', '1025');
+            set('smtp_encryption', 'none');
+            set('smtp_user', '');
+            set('smtp_pass', '');
+            set('mail_from_address', 'noreply@example.test');
+        });
+    }
+
     function onReady() {
         initThemeToggle();
         initCopyButtons();
@@ -447,6 +474,7 @@
         initPasswordToggles();
         initEncryptionPort();
         initFromSuggestion();
+        initMailpitPrefill();
     }
 
     if (document.readyState === 'loading') {

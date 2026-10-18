@@ -1,6 +1,6 @@
 <?php use function OpenSendForm\Admin\h; ?>
 <?php require __DIR__ . '/_progress.php'; ?>
-<h1>Welcome — let’s set up OpenSendForm</h1>
+<h1>Welcome — let’s set up openSendForm</h1>
 
 <p>
     This short setup runs once. Over the next few steps it checks your hosting,

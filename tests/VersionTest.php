@@ -22,10 +22,10 @@ final class VersionTest extends TestCase
         );
     }
 
-    public function testFirstPackagedVersion(): void
+    public function testCurrentPackagedVersion(): void
     {
-        // 0.1.0 is the first packaged release (Increment 8). This guards against
-        // an accidental revert to the pre-packaging 0.0.1.
-        self::assertSame('0.1.0', Version::STRING);
+        // 0.2.0 is the openSendForm (osf-php) rebrand release. This guards
+        // against an accidental revert of the version bump.
+        self::assertSame('0.2.0', Version::STRING);
     }
 }

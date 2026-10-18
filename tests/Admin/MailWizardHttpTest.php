@@ -197,6 +197,76 @@ final class MailWizardHttpTest extends TestCase
         self::assertStringContainsString("'SMTP_PASS' => 'brand-new-secret'", $this->configFileText());
     }
 
+    public function testSaveWithEmptyAuthPersists(): void
+    {
+        // Anonymous SMTP (localhost relays / Mailpit): both username and
+        // password blank is legitimate and must save, with no auth stored.
+        $this->login();
+        $csrf = $this->csrfFrom($this->get('/admin/mail'));
+
+        $response = $this->post('/admin/mail', [
+            '_csrf'             => $csrf,
+            'smtp_host'         => 'mailpit',
+            'smtp_port'         => '1025',
+            'smtp_encryption'   => 'none',
+            'smtp_user'         => '',
+            'smtp_pass'         => '',
+            'mail_from_address' => 'noreply@example.test',
+            'mail_from_name'    => 'Local',
+        ]);
+
+        self::assertSame(302, $response->getStatusCode());
+        $text = $this->configFileText();
+        self::assertStringContainsString("'SMTP_USER' => ''", $text);
+        self::assertStringNotContainsString("'SMTP_PASS'", $text);
+    }
+
+    public function testSaveRejectsPasswordWithoutUsername(): void
+    {
+        $this->login();
+        $csrf = $this->csrfFrom($this->get('/admin/mail'));
+
+        $response = $this->post('/admin/mail', [
+            '_csrf'             => $csrf,
+            'smtp_host'         => 'smtp.example.com',
+            'smtp_port'         => '587',
+            'smtp_encryption'   => 'starttls',
+            'smtp_user'         => '',
+            'smtp_pass'         => 'orphan-password',
+            'mail_from_address' => 'hello@example.com',
+            'mail_from_name'    => 'E',
+        ]);
+
+        self::assertSame(422, $response->getStatusCode());
+        self::assertStringContainsString('Enter a username to use with that password', (string) $response->getBody());
+    }
+
+    public function testMailpitPrefillLinkShownInDev(): void
+    {
+        $this->login();
+        $body = (string) $this->get('/admin/mail')->getBody();
+        self::assertStringContainsString('data-mailpit-prefill', $body);
+        self::assertStringContainsString('Fill with local test settings (Mailpit)', $body);
+        self::assertStringContainsString('https://opensendform.com/guides/local-testing', $body);
+    }
+
+    public function testMailpitPrefillLinkHiddenInProduction(): void
+    {
+        $this->writeConfig([
+            'APP_ENV'           => 'production',
+            'APP_SECRET'        => str_repeat('a', 64),
+            'SMTP_HOST'         => 'h',
+            'MAIL_FROM_ADDRESS' => 'hello@example.com',
+            'MAIL_FROM_NAME'    => 'E',
+        ]);
+        $this->buildApp();
+        $this->login();
+
+        $body = (string) $this->get('/admin/mail')->getBody();
+        self::assertStringNotContainsString('data-mailpit-prefill', $body);
+        self::assertStringNotContainsString('Fill with local test settings (Mailpit)', $body);
+    }
+
     public function testSaveRejectsInvalidFromAddress(): void
     {
         $this->login();

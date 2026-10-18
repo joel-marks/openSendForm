@@ -19,7 +19,7 @@ use function OpenSendForm\Admin\icon;
 <h1>Set up your scheduled tasks</h1>
 
 <p>
-    OpenSendForm needs two small jobs that your host runs on a schedule (a
+    openSendForm needs two small jobs that your host runs on a schedule (a
     “cron job”). They keep everything working while nobody is watching:
 </p>
 
@@ -73,7 +73,7 @@ use function OpenSendForm\Admin\icon;
     command with that.</small></p>
 
 <p><small>No rush — if you’d rather do this later, you can. The commands stay
-    available from the admin <strong>Email</strong> tab, and OpenSendForm will
+    available from the admin <strong>Email</strong> tab, and openSendForm will
     remind you until they’re running.</small></p>
 
 <form method="post" action="/install/scheduled">

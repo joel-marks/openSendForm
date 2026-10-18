@@ -257,6 +257,12 @@ final class InstallController
         if ($fromName === '') {
             return self::renderMailStep($c, $response, $data, 'Please enter a From name (what recipients see as the sender).', 422);
         }
+        // SMTP auth is optional (localhost relays and Mailpit send without a
+        // login). An empty username means "no auth"; a password with no username
+        // cannot be used, so reject that combination plainly.
+        if ($user === '' && $password !== '') {
+            return self::renderMailStep($c, $response, $data, 'Enter a username to use with that password — or leave both the username and password blank if your server sends without a login.', 422);
+        }
 
         $changes = [
             'SMTP_HOST'         => $host,
@@ -567,6 +573,8 @@ final class InstallController
             'fromName'       => (string) ($data['mail_from_name'] ?? ''),
             'passwordError'  => $error !== '',
             'testRecipient'  => (string) ($data['test_recipient'] ?? ($data['mail_from_address'] ?? '')),
+            // Dev convenience: a one-click Mailpit prefill link, never in prod.
+            'mailpitPrefill' => $c->get(Config::class)->appEnv() !== 'production',
         ], $status);
     }
 
@@ -600,8 +608,8 @@ final class InstallController
             self::mailerFactory($c)->make($config)->send(
                 $to,
                 null,
-                'OpenSendForm test email',
-                "This is a test email from OpenSendForm.\n\n"
+                'openSendForm test email',
+                "This is a test email from openSendForm.\n\n"
                 . "If it reached you, your email settings are working and submissions "
                 . "will be delivered."
             );

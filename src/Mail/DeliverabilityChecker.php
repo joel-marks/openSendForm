@@ -42,12 +42,15 @@ final class DeliverabilityChecker
      * Run all three checks for the domain of the given From address.
      *
      * @param string $fromAddress  The configured From address; its domain is checked.
-     * @param string $adminEmail   Used to seed the recommended DMARC rua mailbox.
+     * @param string $adminEmail   Accepted for backward compatibility; no longer
+     *                             used (the DMARC rua now references the From
+     *                             domain's postmaster, see recommendedDmarc()).
      * @param string $dkimSelector The DKIM selector to look up (default 'default').
      * @param string $smtpHost     The configured SMTP host; seeds the SPF include hint.
      *
      * @return array{
      *     valid: bool,
+     *     placeholder: bool,
      *     domain: string,
      *     selector: string,
      *     spf: array<string, mixed>,
@@ -57,20 +60,28 @@ final class DeliverabilityChecker
      */
     public function check(
         string $fromAddress,
-        string $adminEmail,
+        string $adminEmail = '',
         string $dkimSelector = 'default',
         string $smtpHost = ''
     ): array {
         $domain = self::domainOf($fromAddress);
         $selector = self::normaliseSelector($dkimSelector);
+        $placeholder = $domain !== '' && self::isPlaceholderDomain($domain);
+
+        // A placeholder domain (localhost, example.*, a reserved test TLD, …)
+        // never has real DNS and never will, so we run no lookups and offer no
+        // records to add; the UI explains that checks apply to real domains.
+        // 'valid' means "a real From domain we can give advice for".
+        $lookupDomain = $placeholder ? '' : $domain;
 
         return [
-            'valid'    => $domain !== '',
-            'domain'   => $domain,
-            'selector' => $selector,
-            'spf'      => $this->checkSpf($domain, $smtpHost),
-            'dkim'     => $this->checkDkim($domain, $selector),
-            'dmarc'    => $this->checkDmarc($domain, $adminEmail),
+            'valid'       => $domain !== '' && !$placeholder,
+            'placeholder' => $placeholder,
+            'domain'      => $domain,
+            'selector'    => $selector,
+            'spf'         => $this->checkSpf($lookupDomain, $smtpHost),
+            'dkim'        => $this->checkDkim($lookupDomain, $selector),
+            'dmarc'       => $this->checkDmarc($lookupDomain),
         ];
     }
 
@@ -132,7 +143,7 @@ final class DeliverabilityChecker
     /**
      * @return array<string, mixed>
      */
-    private function checkDmarc(string $domain, string $adminEmail): array
+    private function checkDmarc(string $domain): array
     {
         $fqdn = $domain === '' ? '' : '_dmarc.' . $domain;
         $found = $fqdn === '' ? null : $this->firstMatching($fqdn, '/^v=DMARC1\b/i');
@@ -146,7 +157,7 @@ final class DeliverabilityChecker
             'state'       => $found !== null ? 'present' : 'absent',
             'ok'          => $found !== null,
             'found'       => $found,
-            'recommended' => self::recommendedDmarc($adminEmail),
+            'recommended' => self::recommendedDmarc($domain),
             'explain'     => 'DMARC tells receivers what to do with messages that fail SPF and '
                 . 'DKIM, and can email you a report; start in monitor-only mode (p=none).',
             'where'       => self::WHERE,
@@ -182,14 +193,51 @@ final class DeliverabilityChecker
         return 'v=spf1 a mx ~all';
     }
 
-    private static function recommendedDmarc(string $adminEmail): string
+    /**
+     * The starter DMARC record for a real sending domain. Aggregate reports go
+     * to that domain's own postmaster mailbox — an address RFC 5321 expects
+     * every domain to accept — so we point at a real, owner-controlled mailbox
+     * rather than fabricating one or borrowing an address at another domain.
+     */
+    private static function recommendedDmarc(string $domain): string
     {
-        $adminEmail = trim($adminEmail);
-        if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL) !== false) {
-            return 'v=DMARC1; p=none; rua=mailto:' . $adminEmail;
+        $domain = strtolower(trim($domain));
+        if ($domain !== '') {
+            return 'v=DMARC1; p=none; rua=mailto:postmaster@' . $domain;
         }
 
         return 'v=DMARC1; p=none';
+    }
+
+    /**
+     * Whether a domain is a placeholder/reserved name that has no public DNS and
+     * never will — so deliverability advice (records to publish) makes no sense
+     * for it. Covers localhost and anything under it, the fake "localhost.com"
+     * family, the RFC 2606 example.* domains, and the reserved test/dev TLDs
+     * (RFC 6761 / RFC 2606: .test, .example, .invalid, .local, .localhost).
+     */
+    public static function isPlaceholderDomain(string $domain): bool
+    {
+        $domain = strtolower(trim($domain));
+        if ($domain === '') {
+            return false;
+        }
+
+        if ($domain === 'localhost' || $domain === 'localhost.com') {
+            return true;
+        }
+
+        if (str_starts_with($domain, 'example.')) {
+            return true;
+        }
+
+        foreach (['.localhost', '.localhost.com', '.test', '.example', '.invalid', '.local'] as $suffix) {
+            if (str_ends_with($domain, $suffix)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // --- Small string helpers ---------------------------------------------

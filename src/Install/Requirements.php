@@ -154,7 +154,7 @@ final class Requirements
             'curl',
             'Web requests support (curl)',
             $ok ? self::PASS : self::WARN,
-            $ok ? '' : 'The "curl" extension is missing. OpenSendForm still works, but the optional '
+            $ok ? '' : 'The "curl" extension is missing. openSendForm still works, but the optional '
                 . 'Cloudflare Turnstile spam check cannot be verified without it.'
         );
     }

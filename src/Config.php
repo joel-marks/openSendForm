@@ -239,7 +239,7 @@ final class Config
             // Envelope/header identity. From: is ALWAYS this address; the
             // submitter never controls it.
             'MAIL_FROM_ADDRESS'      => 'noreply@localhost',
-            'MAIL_FROM_NAME'         => 'OpenSendForm',
+            'MAIL_FROM_NAME'         => 'openSendForm',
 
             // Retry policy. A submission is attempted at most MAIL_MAX_ATTEMPTS
             // times; the backoff list gives the wait (minutes) after each

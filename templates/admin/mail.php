@@ -31,7 +31,7 @@ use function OpenSendForm\Admin\icon;
 <h1>Email</h1>
 
 <p>
-    Set up how OpenSendForm sends the emails your forms produce. Enter your
+    Set up how openSendForm sends the emails your forms produce. Enter your
     mailbox’s SMTP details, turn sending on, then send yourself a test — the
     email arriving is the proof it all works. The DNS records that keep your
     messages out of spam live on the <a href="/admin/deliverability">Deliverability</a> tab.
@@ -116,7 +116,7 @@ use function OpenSendForm\Admin\icon;
 <!-- ================= Scheduled tasks (cron) ================= -->
 <section id="cron">
     <h2>Scheduled tasks (cron)</h2>
-    <p><small>Two small jobs keep OpenSendForm running: hourly monitoring of your
+    <p><small>Two small jobs keep openSendForm running: hourly monitoring of your
         forms, and an hourly retry of any emails that failed the first time. Add
         each as a cron job in cPanel (<strong>Cron Jobs</strong> → Once Per Hour),
         setting the second job’s Minute to <code>5</code> so they don’t overlap.

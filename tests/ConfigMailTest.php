@@ -24,7 +24,7 @@ final class ConfigMailTest extends TestCase
         self::assertSame('', $config->smtpPass());
         self::assertSame('none', $config->smtpEncryption());
         self::assertSame('noreply@localhost', $config->mailFromAddress());
-        self::assertSame('OpenSendForm', $config->mailFromName());
+        self::assertSame('openSendForm', $config->mailFromName());
         self::assertSame(5, $config->mailMaxAttempts());
         self::assertSame([1, 5, 30, 120], $config->mailRetryBackoffMinutes());
     }

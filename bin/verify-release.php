@@ -7,7 +7,7 @@ declare(strict_types=1);
  * bin/verify-release.php — prove a built release zip is well-formed.
  *
  * Runs in the DEV CONTAINER / CI. Given a zip (argv[1], or the default
- * dist/opensendform-v{VERSION}.zip), it extracts to a temp dir and asserts:
+ * dist/osf-php-v{VERSION}.zip), it extracts to a temp dir and asserts:
  *   - no excluded path leaked into the artefact,
  *   - every required path is present (front controller, embed script, the
  *     .htaccess set, autoloader, migrations, bin/osf, LICENSE, INSTALL.txt),
@@ -25,7 +25,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/release_lib.php';
 
 /**
- * Paths (relative to the opensendform/ root) that must NOT appear in a release.
+ * Paths (relative to the osf-php/ root) that must NOT appear in a release.
  * Kept identical to osf_build_exclusions() in bin/build-release.php.
  *
  * @return array<int, string>
@@ -56,7 +56,7 @@ function osf_verify_exclusions(): array
 }
 
 /**
- * Files (relative to the opensendform/ root) that MUST be present in a release.
+ * Files (relative to the osf-php/ root) that MUST be present in a release.
  * Glob-free exact paths, except migrations, which are checked separately as a
  * "at least one *.sql" rule.
  *
@@ -134,9 +134,9 @@ function osf_verify_main(array $argv): int
 {
     $projectRoot = dirname(__DIR__);
     $version = osf_release_version($projectRoot . '/src/Version.php');
-    $folder = 'opensendform';
+    $folder = 'osf-php';
 
-    $zipPath = $argv[1] ?? ($projectRoot . '/dist/opensendform-v' . $version . '.zip');
+    $zipPath = $argv[1] ?? ($projectRoot . '/dist/osf-php-v' . $version . '.zip');
     if (!is_file($zipPath)) {
         fwrite(STDERR, "FAIL: zip not found: {$zipPath}\n");
         return 1;

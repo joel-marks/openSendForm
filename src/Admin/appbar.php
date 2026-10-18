@@ -46,8 +46,8 @@ if (!function_exists('OpenSendForm\\Admin\\appbar')) {
         // --- Row 1: brand surface -----------------------------------------
         // The brand is a link home only when signed in; otherwise inert text.
         $brand = $variant === 'full'
-            ? '<a class="osf-brand" href="/admin">OpenSendForm</a>'
-            : '<span class="osf-brand">OpenSendForm</span>';
+            ? '<a class="osf-brand" href="/admin">openSendForm</a>'
+            : '<span class="osf-brand">openSendForm</span>';
 
         $docs = '<a class="osf-nav-link osf-nav-docs" href="https://opensendform.com"'
             . ' target="_blank" rel="noopener">'

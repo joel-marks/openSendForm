@@ -91,7 +91,7 @@ use function OpenSendForm\Admin\icon;
         <span>
             <?= icon('clock') ?>
             <strong>Scheduled tasks aren’t set up yet.</strong>
-            OpenSendForm needs two hourly cron jobs to monitor your forms and
+            openSendForm needs two hourly cron jobs to monitor your forms and
             retry failed emails. <a href="/admin/mail#cron">Set them up now</a>.
         </span>
     </div>

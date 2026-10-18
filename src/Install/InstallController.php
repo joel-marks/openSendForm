@@ -608,8 +608,8 @@ final class InstallController
             self::mailerFactory($c)->make($config)->send(
                 $to,
                 null,
-                'OpenSendForm test email',
-                "This is a test email from OpenSendForm.\n\n"
+                'openSendForm test email',
+                "This is a test email from openSendForm.\n\n"
                 . "If it reached you, your email settings are working and submissions "
                 . "will be delivered."
             );

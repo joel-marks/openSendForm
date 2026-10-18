@@ -78,7 +78,7 @@ final class InstallerHttpTest extends TestCase
         $welcome = $this->get('/install');
         self::assertSame(200, $welcome->getStatusCode());
         $welcomeBody = (string) $welcome->getBody();
-        self::assertStringContainsString('set up OpenSendForm', $welcomeBody);
+        self::assertStringContainsString('set up openSendForm', $welcomeBody);
         self::assertStringContainsString('href="/install/requirements"', $welcomeBody);
         self::assertStringContainsString('Step 1 of 7', $welcomeBody);
 

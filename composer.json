@@ -1,6 +1,6 @@
 {
-    "name": "opensendform/opensendform",
-    "description": "Free, open-source, self-hostable form-to-email service for shared cPanel/PHP hosting.",
+    "name": "opensendform/osf-php",
+    "description": "openSendForm (osf-php) — a free, open-source, self-hostable PHP form-to-email app for shared cPanel/PHP hosting.",
     "type": "project",
     "license": "MIT",
     "require": {

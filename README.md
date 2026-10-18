@@ -1,28 +1,32 @@
-# OpenSendForm
+# openSendForm
 
 [![CI](https://github.com/joel-marks/OpenSendForm/actions/workflows/ci.yml/badge.svg)](https://github.com/joel-marks/OpenSendForm/actions/workflows/ci.yml)
 
-**Status: pre-alpha. Nothing here is usable yet. Do not install.**
+**openSendForm** (short name **`osf-php`**) is a free, open-source,
+self-hostable **PHP form-to-email app for shared cPanel/PHP hosting**. It does
+exactly one job — turn website form submissions into email — and is *not* a
+general-purpose library, framework or "OSF" platform.
 
-OpenSendForm will be a free, open-source, self-hostable form-to-email
-service for ordinary shared hosting. Install it once on any cPanel/PHP
-host — upload a zip, run a browser installer — and any number of
-websites (static sites, WordPress, anything) can embed a small HTML
-snippet that posts form submissions to it. OpenSendForm validates the
-submission, filters abuse programmatically, and relays it by
-authenticated email to the site owner. No third-party form service, no
-subscriptions, no Node or Docker on the server, and nothing for end
-clients to maintain.
+Install it once on any cPanel/PHP host — upload a zip, run a browser installer
+— and any number of websites (static sites, WordPress, anything) embed a small
+HTML snippet that posts form submissions to it. openSendForm validates each
+submission, filters abuse programmatically, and relays it by authenticated
+email to the site owner. No third-party form service, no subscriptions, no Node
+or Docker on the server, and nothing for end clients to maintain.
 
-## Planned stack
+The short name **`osf-php`** is used for the release zip (`osf-php-vX.Y.Z.zip`)
+and the package metadata, so the project is never mistaken for an unrelated,
+general-purpose "OSF".
+
+## Stack
 PHP 8.1+ · Slim 4 · SQLite (MySQL optional) · PHPMailer · optional
 Cloudflare Turnstile. Server-rendered admin panel with 2FA.
 
 ## Installing
 
-OpenSendForm is designed to install on ordinary shared cPanel/PHP hosting with
+openSendForm is designed to install on ordinary shared cPanel/PHP hosting with
 no command line — just a file upload and a short browser wizard. Grab the
-release zip (`opensendform-vX.Y.Z.zip`) — see **Releases & upgrading** below for
+release zip (`osf-php-vX.Y.Z.zip`) — see **Releases & upgrading** below for
 where to get it and how to upgrade later.
 
 1. **Upload and extract the zip** into a folder on your host, and point a
@@ -56,11 +60,11 @@ saved and can be delivered once mail is set up.
 
 ### The release zip
 
-Each release is a single file, `opensendform-vX.Y.Z.zip`. It contains
+Each release is a single file, `osf-php-vX.Y.Z.zip`. It contains
 everything a shared-hosting install needs — the application code, its PHP
 dependencies already bundled in `vendor/`, the database migrations, `bin/`, the
 `.htaccess` files and a short `INSTALL.txt`. **You never run Composer** and there
-is no build step. Unzipping gives you one folder, `opensendform/`, whose
+is no build step. Unzipping gives you one folder, `osf-php/`, whose
 contents you deploy.
 
 ### Installing (cPanel walk-through)
@@ -70,15 +74,15 @@ root at the extracted `public/`** — not the other way around. You never need t
 know or type an absolute path; you *discover* where things landed.
 
 1. **Upload and extract first.** In the cPanel File Manager, upload
-   `opensendform-vX.Y.Z.zip` into your hosting account and **Extract** it there.
-   You get one folder, `opensendform/`, containing `bin`, `public`, `src`,
+   `osf-php-vX.Y.Z.zip` into your hosting account and **Extract** it there.
+   You get one folder, `osf-php/`, containing `bin`, `public`, `src`,
    `var` and others.
 2. **Find where it landed — don't hard-code paths.** In File Manager, the
    install is simply the folder that contains both `bin` and `public`. If you're
    unsure where your host keeps sites, cPanel's own **Cron Jobs** page prints an
    example path to your home directory — that's the shape your host uses.
 3. **Fix permissions.** Some hosts extract zips with loose or wrong modes. From
-   inside the `opensendform/` folder (File Manager's Terminal, or SSH), run:
+   inside the `osf-php/` folder (File Manager's Terminal, or SSH), run:
    ```
    find . -type d -exec chmod 755 {} \;
    find . -type f -exec chmod 644 {} \;
@@ -89,10 +93,10 @@ know or type an absolute path; you *discover* where things landed.
 4. **Point the document root at `public/`.** Two supported layouts:
    - **Dedicated document root (recommended).** In *Domains* / *Subdomains*, set
      the site's Document Root to the `public/` directory **inside** the
-     extracted `opensendform/` folder. Only `public/` is ever web-served;
+     extracted `osf-php/` folder. Only `public/` is ever web-served;
      everything else stays private.
    - **Shared `public_html`.** If your host won't let you change the document
-     root, move the **contents** of `opensendform/` into `public_html` so it
+     root, move the **contents** of `osf-php/` into `public_html` so it
      holds `bin`, `public`, `src`, `var`, … The bundled `.htaccess` files then
      keep the non-public folders private on Apache hosts. Every server-side
      folder (`src/`, `templates/`, `migrations/`, `bin/`, `vendor/`, `var/`)
@@ -117,7 +121,7 @@ know or type an absolute path; you *discover* where things landed.
 
 Upgrading is a file replace plus a migration:
 
-1. **Download and extract** the new `opensendform-vX.Y.Z.zip`.
+1. **Download and extract** the new `osf-php-vX.Y.Z.zip`.
 2. **Copy the new files over your existing installation, replacing everything
    *except* the `var/` folder.** Do not delete or overwrite `var/` — that is
    where your settings, database and install lock live. If your host resets file
@@ -218,7 +222,7 @@ already points SMTP at Mailpit (`SMTP_HOST=mailpit`, `SMTP_PORT=1025`).
    The response is `{"ok":true}`.
 
 5. Open Mailpit at `http://localhost:8025` — the relayed email is waiting,
-   `From: OpenSendForm`, with the submitter's address as `Reply-To`.
+   `From: openSendForm`, with the submitter's address as `Reply-To`.
 
 `php bin/osf submissions:list` shows the row move to status `sent`. If SMTP
 is unreachable it is left `failed` with a scheduled retry; `php bin/osf
@@ -230,7 +234,7 @@ transport check without a submission: `php bin/osf mail:test --to=you@example.co
 So you learn of breakage before your visitors do, `php bin/osf monitor:run`
 sends a real *fake-but-marked* submission through the FULL public pipeline —
 token fetch, min-time wait, POST, store, and SMTP delivery to the form's real
-recipient (subject/body carry an unmistakable `[OpenSendForm monitor]` marker
+recipient (subject/body carry an unmistakable `[openSendForm monitor]` marker
 so you can filter them). It checks a canary form every run and each other form
 at most once a day, staggered. A check fails if any step errors or the
 submission is not delivered within the send timeout; on an ok→fail (or
@@ -241,7 +245,7 @@ submissions list (see the "synthetic" filter) and auto-purged after a couple of
 days. Wire it to cron on cPanel, hourly, alongside `mail:retry`:
 
 ```
-0 * * * * /usr/local/bin/php /home/USER/opensendform/bin/osf monitor:run --quiet
+0 * * * * /usr/local/bin/php /home/USER/osf-php/bin/osf monitor:run --quiet
 ```
 
 **Hourly is the recommended default.** The cron schedule is the knob: a
@@ -292,7 +296,7 @@ token is invalid rejects it.
 ## Admin panel
 
 The admin panel is served from `/admin` — server-rendered plain PHP with a
-bespoke stylesheet built on the OpenSendForm design tokens (see *Theming*
+bespoke stylesheet built on the openSendForm design tokens (see *Theming*
 below), no JavaScript framework and no build step. Every screen works with
 JavaScript disabled; JS only adds progressive enhancements (theme toggle,
 click-to-copy, QR code, segmented 2FA inputs). Navigation lives in a single
@@ -327,7 +331,7 @@ top header bar (no sidebar); on narrow screens the links simply wrap.
 
 ### Admin model
 
-OpenSendForm is **single-tenant**: an installation has one shared workspace and
+openSendForm is **single-tenant**: an installation has one shared workspace and
 every administrator is a co-operator of it. All admins see all forms and all
 submissions — there are no roles, per-form permissions or ownership. This is by
 design; it keeps a self-hosted, single-site tool simple.
@@ -378,7 +382,7 @@ MIT) vendored as resolved hex, each token annotated with the Primer source it
 maps from. All colour pairs meet WCAG AA contrast. The `data-palette`
 attribute on `<html>` is reserved for alternative palettes; only `github` is
 implemented today. Because the token contract is shared verbatim with the docs
-site, the app and **opensendform.com** render in one visual language — the docs
+site, the app and **osf-php.com** render in one visual language — the docs
 site loads the same `tokens.css`.
 
 The theme toggle in the top nav cycles **Dark → Light → Auto** (Auto follows
@@ -503,7 +507,7 @@ exactly as before.
 | `TRUSTED_PROXIES` | *(empty)* | Comma-separated proxy IPs and/or CIDR ranges. |
 
 By default the client IP is `REMOTE_ADDR` and `X-Forwarded-For` is **ignored**,
-so a client can never spoof its address with a header. If OpenSendForm runs
+so a client can never spoof its address with a header. If openSendForm runs
 behind a reverse proxy or CDN you control, list that proxy's address(es) here
 (plain IPs or CIDR ranges, IPv4 or IPv6). Only when the direct peer is on the
 list is `X-Forwarded-For` consulted, and the client IP is then the *rightmost*
@@ -514,7 +518,7 @@ rate limiter and the IP stored with each submission.
 
 Terminate HTTPS at your host (cPanel's AutoSSL / Let's Encrypt) and serve the
 whole app over TLS. Session cookies are marked `Secure` automatically on HTTPS
-requests. OpenSendForm deliberately does **not** emit an HSTS
+requests. openSendForm deliberately does **not** emit an HSTS
 (`Strict-Transport-Security`) header: whether and for how long to force
 HTTPS-only is the host's decision — and a mistake there can make a domain
 unreachable — so enable HSTS at the web-server/host level if you want it.
@@ -664,7 +668,7 @@ above is unchanged for API and `fetch` callers.
 ## Troubleshooting
 
 **Too many emails from cron?** cPanel emails you whatever a cron job prints to
-stdout, and the OpenSendForm jobs used to print a summary on every run — so an
+stdout, and the openSendForm jobs used to print a summary on every run — so an
 hourly schedule meant hourly mail. The fix is the `--quiet` flag on both cron
 commands (`monitor:run --quiet` and `mail:retry --quiet`); the installer's
 *Scheduled tasks* step and the admin *Email* tab now emit them with it already

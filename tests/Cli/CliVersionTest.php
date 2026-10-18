@@ -39,7 +39,7 @@ final class CliVersionTest extends TestCase
         $result = $this->osf(['version']);
 
         self::assertSame(0, $result['code'], $result['stderr']);
-        self::assertStringContainsString('OpenSendForm ' . Version::STRING, $result['stdout']);
+        self::assertStringContainsString('openSendForm ' . Version::STRING, $result['stdout']);
         self::assertStringContainsString('Schema version:     0', $result['stdout']);
 
         // A fresh database has every migration pending.

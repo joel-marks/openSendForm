@@ -17,7 +17,7 @@ $badge = [
 <h1>Hosting check</h1>
 
 <p>
-    OpenSendForm checks your hosting before installing. Anything marked
+    openSendForm checks your hosting before installing. Anything marked
     <strong>Action needed</strong> must be fixed before you can continue.
     <strong>Heads up</strong> items are optional — you can install without them.
 </p>

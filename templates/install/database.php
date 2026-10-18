@@ -16,7 +16,7 @@ $driver = $driver === 'mysql' ? 'mysql' : 'sqlite';
 <h1>Where should submissions be stored?</h1>
 
 <p>
-    OpenSendForm needs a database to keep your forms and the submissions people
+    openSendForm needs a database to keep your forms and the submissions people
     send. If you’re not sure, choose the <strong>built-in database</strong> —
     it needs nothing else and works on almost every host.
 </p>

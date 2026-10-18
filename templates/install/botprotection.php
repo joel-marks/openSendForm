@@ -15,7 +15,7 @@ use function OpenSendForm\Admin\icon;
 <h1>Bot protection</h1>
 
 <p>
-    OpenSendForm already blocks automated spam on its own — a hidden honeypot,
+    openSendForm already blocks automated spam on its own — a hidden honeypot,
     signed submit tokens and rate limits all work with nothing extra to set up.
     For an even stronger layer you can add <strong>Cloudflare Turnstile</strong>,
     a free, privacy-friendly “are you human?” check, to any form after install.

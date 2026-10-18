@@ -95,6 +95,10 @@ final class AdminRoutes
             $group->get('/deliverability', self::handler($container, [DeliverabilityController::class, 'index']))
                 ->add($auth);
 
+            // Status (live environment re-probe + operational health).
+            $group->get('/status', self::handler($container, [StatusController::class, 'index']))
+                ->add($auth);
+
             // Forms CRUD.
             $group->get('/forms', self::handler($container, [FormsController::class, 'index']))
                 ->add($auth);

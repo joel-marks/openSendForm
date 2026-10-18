@@ -51,6 +51,21 @@ final class MonitorRepository
     }
 
     /**
+     * The single most recent check across ALL forms, or null when none exist.
+     * Ordered by id (monotonic) so ties on checked_at break deterministically.
+     * Feeds the Status page's "monitor last ran" readout and its stale-cron
+     * detection (a newest check far older than the expected cadence = dead cron).
+     *
+     * @return array<string, mixed>|null
+     */
+    public function latest(): ?array
+    {
+        return $this->db->fetchOne(
+            'SELECT * FROM monitor_checks ORDER BY id DESC LIMIT 1'
+        );
+    }
+
+    /**
      * The most recent check for a form, or null when it has never been checked.
      * Ordered by id (monotonic) so ties on checked_at are broken deterministically.
      *

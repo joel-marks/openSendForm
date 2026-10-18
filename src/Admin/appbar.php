@@ -92,7 +92,8 @@ if (!function_exists('OpenSendForm\\Admin\\appbar')) {
                 . $tab('submissions', '/admin/submissions', 'Submissions', 'inbox')
                 . $tab('mail', '/admin/mail', 'Email', 'mail')
                 . $tab('deliverability', '/admin/deliverability', 'Deliverability', 'shield-check')
-                . $tab('admins', '/admin/admins', 'Admins', 'users');
+                . $tab('admins', '/admin/admins', 'Admins', 'users')
+                . $tab('status', '/admin/status', 'Status', 'activity');
         } else {
             $row2 = $stepLabel !== ''
                 ? '<span class="osf-appbar-step">' . h($stepLabel) . '</span>'

@@ -1,5 +1,43 @@
 # Open questions for the architect
 
+## Installer polish r2 (2026-10-18, fix/installer-polish-r2)
+
+All ten tasks were prescriptive and implemented as ruled; no blockers. Three
+interpretive decisions recorded for transparency, none blocking:
+
+1. **Help-circle glyph (task 4b) implemented as a CSS circle around the
+   existing "?" character, not a new glyph/entity or an SVG.** The ruling
+   offered "a suitable glyph/entity... otherwise a tiny inline SVG"; a
+   CSS-drawn circle (`.osf-help-link`: fixed size, `border-radius: 50%`,
+   centred "?") sidesteps cross-platform glyph-rendering risk entirely and
+   needed no new icon. Flag if a literal Unicode glyph or SVG badge was
+   intended instead.
+
+2. **Top-of-step "Skip" control (task 3) is styled with the existing
+   `.osf-link-button` (text, underlined, no border), not a secondary/outline
+   button.** Reasoning: it is deliberately the quieter of the page's two
+   calls to action, in contrast with the bottom row's heavier primary/
+   secondary buttons. It submits the real step `<form>` via the HTML `form=`
+   attribute (no JS) so it works with JavaScript off, matching the project's
+   no-JS-first convention. Flag if a bordered button was intended for visual
+   parity with the Bot-protection step's bottom-row skip.
+
+3. **Content-width fix (task 6) verified by assertion, not by reproducing
+   the pixel drift, in THIS dev container.** `scrollbar-gutter: stable` is
+   the textbook structural fix and is locked by both a PHPUnit rule-presence
+   test and a new `tests/browser/content-width-check.mjs` Playwright script
+   (same non-CI pattern as the existing header/rhythm checks) that asserts
+   identical `main.container` width across Dashboard/Email/Admins/Status in
+   both themes — it passes. However, this container's headless Firefox does
+   not reserve any layout width for the scrollbar even on a genuinely
+   overflowing page (`document.documentElement.clientWidth ===
+   window.innerWidth` regardless of `scrollHeight`), so the specific
+   before/after pixel difference the operator saw could not be reproduced
+   here to confirm root cause by elimination. The fix is standard practice
+   for exactly this failure mode and is the one the task prompt itself named
+   as the prime suspect; flag if independent confirmation on a real desktop
+   browser is wanted before considering this fully closed.
+
 ## Onboarding v2 (2026-09-20, feature/onboarding-v2)
 
 All tasks were prescriptive and implemented as ruled; no blockers. Four

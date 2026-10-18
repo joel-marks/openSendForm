@@ -30,12 +30,12 @@ $mailpitPrefill = $mailpitPrefill ?? false;
 ?>
 <?php if ($mailpitPrefill): ?>
     <p class="osf-field osf-mailpit-prefill">
-        <a href="#" data-mailpit-prefill>Fill with local test settings (Mailpit)</a>
+        <button type="button" class="secondary outline osf-btn-sm" data-mailpit-prefill>Use test settings</button>
         <a href="https://opensendform.com/guides/local-testing" target="_blank" rel="noopener"
            class="osf-help-link" aria-label="About local testing (opens in a new tab)"
            title="About local testing">?</a>
         <br><small>Dev only. Sets host <code>mailpit</code>, port <code>1025</code>,
-            no encryption, no login and a test From address — all still editable.</small>
+            no encryption, no login and a test From address - all still editable.</small>
     </p>
 <?php endif; ?>
 <div class="osf-field">
@@ -57,7 +57,7 @@ $mailpitPrefill = $mailpitPrefill ?? false;
         </button>
     </div>
     <?php if ($passwordError): ?>
-        <small class="osf-hint-warn">For your security the password box was cleared —
+        <small class="osf-hint-warn">For your security the password box was cleared -
             please type it again before saving.</small>
     <?php else: ?>
         <small><?= $passwordSet

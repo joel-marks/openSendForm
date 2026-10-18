@@ -2359,3 +2359,67 @@ and operator-approved.
   (the task said it was "already osf-scoped" — it was not; description aligned,
   name left per the literal instruction) — logged in QUESTIONS.md. osf.js and
   source/asset header comments deliberately out of scope.
+
+## 2026-10-18 — Installer polish r2 (10 operator-reported items)
+- Branch: fix/installer-polish-r2 (off latest main).
+- **No em dashes (task 1, new standing rule).** Added to CLAUDE.md: user-facing
+  copy never uses "—", a plain hyphen "-" instead (source comments/docblocks
+  exempt). Swept every user-facing string found: all `templates/` output text,
+  `bin/osf` CLI stdout/stderr + help text, the installer/admin mail-controller
+  error message, `DeliverabilityChecker`/`MailSettingsForm`/`Requirements`/
+  `InstallerService`/`SubmitHtmlPage` strings, and README.md. Added
+  `tests/NoEmDashTest.php`: tokenizes each PHP file (so comments are correctly
+  excluded) and asserts no "—"/`&mdash;` survives in templates, the key
+  src/CLI sources, or README.md.
+- **Copy changes (task 2).** Welcome heading → "Setup"; MySQL radio label
+  dropped its trailing explainer → "MySQL database"; Finish-page reinstall
+  note reworded per the exact text supplied (dropped "and that's safe" /
+  "or take over your site").
+- **Stepper skip standardisation (task 3).** Email sending and Scheduled tasks
+  steps gained a single top-of-content, right-aligned "Skip" control (a
+  `.osf-link-button` wired to the step's real `<form>` via the HTML `form=`
+  attribute, so it works with JS off) and lost their old bottom-row skip
+  button. Bot protection (last step) is the named exception: its skip stays
+  in the bottom action row, relabelled "Skip and complete", beside "Finish
+  setup". New `.osf-step-skip-top` CSS component.
+- **Mailpit prefill polish (task 4).** The prefill affordance is now a real
+  `<button>` ("Use test settings", secondary/small) instead of a link; the "?"
+  help link renders inside a CSS-drawn circle (`.osf-help-link`); the prefill
+  (admin.js `initMailpitPrefill`) now also sets `mail_from_name` so every
+  required field is filled and the form saves with no further input — locked
+  by a new `MailWizardHttpTest` assertion against the admin.js source.
+- **Appbar row-1 order + installer chrome (task 5).** Row 1 action-group order
+  is now account menu (innermost) → Docs → theme toggle (far right), was
+  Docs → toggle → account. The installer's chrome-only appbar already shared
+  the same component so Docs + the theme toggle were already present on every
+  step; `AppbarTest`/`InstallerHttpTest` gained explicit order/presence
+  assertions.
+- **Content-width drift (task 6) — root cause: the vertical scrollbar.** A
+  page tall enough to scroll (Email, Admins, Status) narrows the viewport by
+  the scrollbar's width versus a short page (Dashboard), so the same
+  `.container` rule resolved to a different pixel width purely as a function
+  of page height. Fixed with one rule, `scrollbar-gutter: stable` on `html`
+  (admin.css), reserving the gutter unconditionally. Locked by a new
+  PHPUnit rule-presence test and a new non-CI Playwright script
+  `tests/browser/content-width-check.mjs` (asserts equal `main.container`
+  width across Dashboard/Email/Admins/Status, both themes — passes). See
+  QUESTIONS.md for a caveat on verifying the actual pixel drift in this
+  container's headless Firefox.
+- **Mail-page switch (task 7) — root cause: a CSS specificity gap.** The
+  browser-default `input[type="checkbox"], input[type="radio"] { width: auto
+  }` rule (an attribute selector) is MORE specific than the bare `.osf-switch`
+  class, so it won the width cascade on the checkbox-markup switch (the mail
+  "send emails" toggle) and collapsed it to native size, while the
+  `<button class="osf-switch">` instances (admins page) were unaffected
+  because that rule never matches a `<button>`. Fixed by repeating
+  `width`/`height` on the highest-specificity selector for the checkbox,
+  `input[type="checkbox"].osf-switch`. Locked by two new DesignSystemTest
+  assertions (shared markup pattern + matching declared size).
+- **Reinstall link relocation (task 8).** Removed from the account-menu
+  dropdown (`src/Admin/appbar.php`); added as a plain "Instructions to
+  reinstall app" line beneath the dashboard's two-factor-setup line, linking
+  to the same guide URL. `DesignSystemTest`/`AdminUiTest` updated.
+- **Test results:** full suite **OK — 676 tests, 4250 assertions** (from 666).
+- **Deviations / notes:** none blocking; three interpretive judgment calls
+  (help-glyph rendering, top-skip button style, content-width fix verification
+  caveat) logged in QUESTIONS.md.

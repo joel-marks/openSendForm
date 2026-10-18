@@ -15,8 +15,9 @@ namespace OpenSendForm\Admin;
  * function, so the header can never drift per page again.
  *
  * Two variants, selected by parameter (never by separate markup):
- *   - full        the signed-in admin header: brand links home, Docs + theme
- *                 toggle + account menu in row 1, the populated tab strip in row 2.
+ *   - full        the signed-in admin header: brand links home, row 1 holds
+ *                 (left to right) the account menu, Docs and the theme toggle
+ *                 at the far right; the populated tab strip is in row 2.
  *   - chrome-only  login / installer / HTML submit + error pages: a no-session
  *                 brand row (product name, Docs, theme toggle — no account menu),
  *                 and row 2 present but EMPTY of nav items, keeping its shared
@@ -68,10 +69,6 @@ if (!function_exists('OpenSendForm\\Admin\\appbar')) {
                 . '</summary>'
                 . '<div class="osf-account-panel">'
                 . '<a class="osf-account-item" href="/admin/account">Your account</a>'
-                . '<a class="osf-account-item" href="https://opensendform.com/guides/reinstall"'
-                . ' target="_blank" rel="noopener">'
-                . icon('rotate-ccw') . ' Reinstall app'
-                . '<span class="osf-visually-hidden"> (opens in a new tab)</span></a>'
                 . '<form method="post" action="/admin/logout" class="osf-inline-form">'
                 . '<input type="hidden" name="_csrf" value="' . h($csrf) . '">'
                 . '<button type="submit" class="osf-account-item osf-account-item--danger">'
@@ -103,7 +100,7 @@ if (!function_exists('OpenSendForm\\Admin\\appbar')) {
         return '<div class="osf-appbar">'
             . '<header class="osf-header"><div class="osf-header-inner container">'
             . $brand
-            . '<div class="osf-header-actions">' . $docs . $toggle . $account . '</div>'
+            . '<div class="osf-header-actions">' . $account . $docs . $toggle . '</div>'
             . '</div></header>'
             . '<nav class="osf-tabnav" aria-label="Primary"><div class="osf-tabnav-inner container">'
             . $row2

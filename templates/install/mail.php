@@ -23,9 +23,14 @@ use function OpenSendForm\Admin\h;
 <?php require __DIR__ . '/_progress.php'; ?>
 <h1>Set up email sending</h1>
 
+<div class="osf-step-skip-top">
+    <button type="submit" name="action" value="skip" form="mail-step-form"
+            formnovalidate class="osf-link-button">Skip</button>
+</div>
+
 <p>
     openSendForm delivers each form submission to you by email. Enter the details
-    of the mailbox it should send from — or skip this and set it up later; either
+    of the mailbox it should send from, or skip this and set it up later; either
     way your setup finishes on the next screen.
 </p>
 
@@ -33,18 +38,18 @@ use function OpenSendForm\Admin\h;
     <p><strong>On cPanel:</strong> creating a subdomain does <strong>not</strong>
         create a mailbox. First make an email account under
         <strong>Email Accounts</strong>, then open its
-        <strong>Connect Devices</strong> page — that lists the SMTP host, port and
+        <strong>Connect Devices</strong> page - that lists the SMTP host, port and
         encryption to type below. The username is the full email address and the
         password is that mailbox’s password.</p>
     <p><small>Not on cPanel? Any provider’s outgoing-mail (SMTP) settings work the
-        same way — host, port, username and password.</small></p>
+        same way - host, port, username and password.</small></p>
 </div>
 
 <?php if (($error ?? '') !== ''): ?>
     <p class="osf-flash osf-flash--error" role="alert"><strong><?= h($error) ?></strong></p>
 <?php endif; ?>
 
-<form method="post" action="/install/mail">
+<form method="post" action="/install/mail" id="mail-step-form">
     <input type="hidden" name="_csrf" value="<?= h($csrf) ?>">
 
     <?php require dirname(__DIR__) . '/_shared/mail_fields.php'; ?>
@@ -60,7 +65,6 @@ use function OpenSendForm\Admin\h;
     </div>
 
     <div class="osf-actions osf-step-actions">
-        <button type="submit" name="action" value="skip" class="secondary outline osf-step-skip" formnovalidate>Skip for now</button>
         <button type="submit" name="action" value="test" class="secondary">Send test email</button>
         <button type="submit" name="action" value="save">Save and continue</button>
     </div>

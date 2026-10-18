@@ -29,7 +29,7 @@ use function OpenSendForm\Admin\icon;
     <?php endif; ?>
     Its embed snippet will stop working immediately. If you only want to stop
     accepting new submissions, go back and <strong>disable</strong> the form
-    instead — that keeps its data and is reversible.
+    instead - that keeps its data and is reversible.
 </p>
 
 <form method="post" action="/admin/forms/<?= h((string) $formId) ?>/delete">

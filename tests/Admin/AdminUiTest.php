@@ -106,6 +106,16 @@ final class AdminUiTest extends TestCase
         // A delivered submission's status is never in the problem list body.
     }
 
+    public function testDashboardLinksToTheReinstallGuide(): void
+    {
+        $this->login();
+        $body = (string) $this->get('/admin')->getBody();
+
+        self::assertStringContainsString('Instructions', $body);
+        self::assertStringContainsString('to reinstall app</a>', $body);
+        self::assertStringContainsString('href="https://opensendform.com/guides/reinstall"', $body);
+    }
+
     public function testAllZeroStatCardsUseTheInfoTone(): void
     {
         // A fresh install with no forms and no submissions: every stat value is

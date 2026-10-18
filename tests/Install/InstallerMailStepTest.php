@@ -153,7 +153,7 @@ final class InstallerMailStepTest extends TestCase
     {
         $body = (string) $this->get('/install/mail')->getBody();
         self::assertStringContainsString('data-mailpit-prefill', $body);
-        self::assertStringContainsString('Fill with local test settings (Mailpit)', $body);
+        self::assertStringContainsString('Use test settings', $body);
     }
 
     public function testTestSendUsesEnteredSettingsAndStaysOnStep(): void

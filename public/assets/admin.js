@@ -462,6 +462,7 @@
             set('smtp_user', '');
             set('smtp_pass', '');
             set('mail_from_address', 'noreply@example.test');
+            set('mail_from_name', 'Test');
         });
     }
 

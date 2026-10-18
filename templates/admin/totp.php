@@ -4,7 +4,7 @@
 <p>Enter the 6-digit code from your authenticator app, or one of your
    recovery codes if you've lost access to it.</p>
 
-<p><small>Lost your authenticator? Enter ONE of your recovery codes instead —
+<p><small>Lost your authenticator? Enter ONE of your recovery codes instead -
    each is 10 characters (letters and numbers) and works a single time.</small></p>
 
 <?php if (($error ?? '') !== ''): ?>

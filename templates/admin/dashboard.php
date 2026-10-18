@@ -21,7 +21,7 @@ use function OpenSendForm\Admin\icon;
              migration, unlike the 2FA/mail nudges below. */ ?>
     <div class="osf-flash osf-flash--error" role="alert">
         <?= icon('alert-triangle') ?>
-        <span><strong>Database update required</strong> &mdash; run <code>bin/osf migrate</code>
+        <span><strong>Database update required</strong> - run <code>bin/osf migrate</code>
         (<?= h((string) $pendingMigrations) ?> pending migration<?= $pendingMigrations === 1 ? '' : 's' ?>).</span>
     </div>
 <?php endif; ?>
@@ -32,7 +32,7 @@ use function OpenSendForm\Admin\icon;
              It clears itself as soon as a later check passes. */ ?>
     <div class="osf-flash osf-flash--error" role="alert">
         <?= icon('alert-triangle') ?>
-        <span><strong>Synthetic monitoring detected a problem</strong> &mdash;
+        <span><strong>Synthetic monitoring detected a problem</strong> -
         <?php
         $names = array_map(static fn (array $f): string => h((string) $f['form_name']), $monitorFailures);
         ?>
@@ -154,7 +154,7 @@ use function OpenSendForm\Admin\icon;
                     <td data-label="Attempts"><?= h((string) $row['attempts']) ?></td>
                     <td data-label="Last error">
                         <?php if ($error === ''): ?>
-                            <span aria-hidden="true">—</span>
+                            <span aria-hidden="true">-</span>
                         <?php elseif (mb_strlen($error) <= 80): ?>
                             <?= h($error) ?>
                         <?php else: ?>
@@ -178,3 +178,6 @@ use function OpenSendForm\Admin\icon;
         <a href="/admin/totp/setup">Manage two-factor authentication</a>
     <?php endif; ?>
 </p>
+
+<p><small><a href="https://opensendform.com/guides/reinstall" target="_blank" rel="noopener">Instructions
+    to reinstall app</a><span class="osf-visually-hidden"> (opens in a new tab)</span></small></p>

@@ -40,7 +40,7 @@ use function OpenSendForm\Admin\h;
         <input type="password" id="password" name="password" autocomplete="new-password"
                minlength="<?= h((string) $minPasswordLength) ?>" required>
         <small>At least <?= h((string) $minPasswordLength) ?> characters. Use a long,
-            unique password — you can change it later.</small>
+            unique password - you can change it later.</small>
     </div>
 
     <div class="osf-field">

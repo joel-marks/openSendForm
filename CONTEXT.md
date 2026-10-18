@@ -1,17 +1,18 @@
 # openSendForm — current state
 
-Last updated: 2026-10-18 (feature/status-tab-and-rebrand, Claude Code)
+Last updated: 2026-10-18 (fix/installer-polish-r2, Claude Code)
 
 ## Status
 The service is end-to-end and release-ready as **v0.2.0** (the openSendForm /
-osf-php rebrand release). A versioned v1 API drives an ordered validation/abuse
-pipeline; passing submissions are stored and relayed by authenticated SMTP
-(in-request send + operator retry sweep). Full admin panel (auth, 2FA,
-forms/submissions CRUD, Email + Deliverability + **Status** tabs, an 8-step
-browser installer), a client-site embed with a no-JS fallback, dev tooling,
-migrations, guarded deletion, release packaging, synthetic monitoring +
-alerting, and a defence-in-depth hardening layer are all built and green.
-Suite: **666 tests**. CI runs tests + a package build/verify on every PR/push.
+osf-php rebrand release), now with an installer/admin polish pass on top. A
+versioned v1 API drives an ordered validation/abuse pipeline; passing
+submissions are stored and relayed by authenticated SMTP (in-request send +
+operator retry sweep). Full admin panel (auth, 2FA, forms/submissions CRUD,
+Email + Deliverability + Status tabs, an 8-step browser installer), a
+client-site embed with a no-JS fallback, dev tooling, migrations, guarded
+deletion, release packaging, synthetic monitoring + alerting, and a
+defence-in-depth hardening layer are all built and green.
+Suite: **676 tests**. CI runs tests + a package build/verify on every PR/push.
 
 ## Product definition
 Free, open-source, self-hostable **PHP form-to-email app for shared cPanel/PHP
@@ -19,6 +20,13 @@ hosting** — display name **openSendForm**, short form **osf-php**. One install
 serves many websites via an embedded snippet + JS posting to a central endpoint.
 Validated, abuse-filtered, relayed by authenticated SMTP to the site owner. It
 does one job; it is not a general-purpose library/framework.
+
+## Copy rule (standing, added this sprint)
+No em dashes in user-facing copy (CLAUDE.md standing rule): templates,
+installer, CLI output, flash/error messages and README/INSTALL.txt use a
+plain hyphen "-" instead of "—"; source-code comments/docblocks are exempt.
+`tests/NoEmDashTest.php` tokenizes PHP files (so comments are correctly
+excluded) and greps README.md to lock it.
 
 ## Decisions locked
 - PHP 8.1+ / Slim 4 / Composer / PHPMailer / SQLite default (MySQL optional via
@@ -35,7 +43,7 @@ does one job; it is not a general-purpose library/framework.
 - **Branding (v0.2.0):** display name "openSendForm" everywhere user-facing;
   short form "osf-php" for the release zip + package metadata. Page titles stay
   `osf - {page}`. The PHP namespace `OpenSendForm` and all code identifiers are
-  EXEMPT (never renamed). See QUESTIONS.md for the exact scope of the sweep.
+  EXEMPT (never renamed).
 
 ## Submission pipeline order (enforced + tested)
 method/body size → field hygiene → form lookup by URL key → origin allowlist →
@@ -43,7 +51,38 @@ per-IP then per-form rate limits → honeypot → token → Turnstile (optional)
 email (bounded MX/A) → store → delivery (terminal, always succeeds). Locked by
 SubmitPipelineOrderTest. Synthetic marking rides on the store stage only.
 
-## Status tab (this sprint — feature/status-tab-and-rebrand)
+## Installer/admin polish r2 (this sprint — fix/installer-polish-r2)
+- **Stepper skip control, standardised.** Skippable steps (Email sending,
+  Scheduled tasks) carry ONE top-of-content, right-aligned "Skip" control
+  (`.osf-step-skip-top` + `.osf-link-button`, wired to the real `<form>` via
+  the HTML `form=` attribute so it works with JS off); the old per-step
+  bottom-row skip button is gone. Bot protection (last step) is the named
+  exception: its skip stays bottom-row, next to "Finish setup", relabelled
+  "Skip and complete".
+- **Appbar row 1 order:** account menu (innermost) → Docs → theme toggle
+  (far right); was Docs → toggle → account. Same `.osf-appbar` component
+  (`src/Admin/appbar.php`) for both variants, so the installer's chrome-only
+  pages show Docs + the theme toggle on every step (never the account menu).
+- **Reinstall link moved** from the account-menu dropdown to a plain line
+  ("Instructions to reinstall app") under the dashboard's two-factor-setup
+  line; same guide URL.
+- **Mailpit prefill is a button** ("Use test settings", secondary/small),
+  not a link; its "?" help affordance renders inside a CSS-drawn circle
+  (`.osf-help-link`); the prefill now fills every required field (added
+  `mail_from_name`) so the form saves without further input.
+- **Content-width drift fixed:** `scrollbar-gutter: stable` on `html`
+  (admin.css) — a page tall enough to scroll no longer narrows
+  `main.container` versus a short page. Non-CI Playwright script
+  `tests/browser/content-width-check.mjs` added (same pattern as the
+  existing header/rhythm checks) alongside a PHPUnit rule-presence lock.
+- **Mail-page switch fixed:** the checkbox-markup `.osf-switch` (mail
+  "send emails" toggle) now repeats `width`/`height` on its own
+  highest-specificity selector (`input[type="checkbox"].osf-switch`), so a
+  browser default (`input[type="checkbox"] { width: auto }`, more specific
+  than the bare `.osf-switch` class) can no longer collapse it — it now
+  renders identically to the button-markup switches (admins page).
+
+## Status tab
 `Admin\StatusController` (/admin/status, rightmost nav tab, Lucide `activity`)
 renders a live, uncached operational readout; logic in a testable
 `Admin\StatusReport`:
@@ -59,7 +98,7 @@ renders a live, uncached operational readout; logic in a testable
   result from `monitor_checks` (red "not run recently" when the newest check is
   older than 2× the hourly cadence; `MonitorRepository::latest()`), CRON_SETUP.
 
-## Mail form (this sprint)
+## Mail form
 - **Optional SMTP auth.** Empty username = no auth (anonymous relays / Mailpit),
   honoured by `PhpMailerMailer` (asserted via a `configure()` seam). The admin
   page and installer step reject a password with no username in plain language
@@ -67,9 +106,7 @@ renders a live, uncached operational readout; logic in a testable
 - **Deliverability advice** skips placeholder/reserved From domains (localhost,
   example.*, .test/.invalid/.local/…) with a plain "real domains only" notice;
   the DMARC `rua` references the From domain's own postmaster.
-- **Dev-only Mailpit prefill** link (+ a ? help link) on the shared mail-fields
-  partial, driven by admin.js, hidden in production (admin + installer).
-- `.osf-switch-field` now owns component-level vertical rhythm (was `margin:0`).
+- `.osf-switch-field` owns component-level vertical rhythm (was `margin:0`).
 
 ## Prior sprints (condensed — see HISTORY)
 - **Cron noise + monitor cost:** `--quiet` on `mail:retry`/`monitor:run` (output
@@ -109,18 +146,18 @@ zip's single top-level folder is `osf-php/`; the artefact is
   success URLs (out of embed scope).
 - MySQL live-test, NativeSession `$_SESSION`, real SMTP/UDP DNS sockets, the
   monitor's real CurlHttpClient socket and osf.js DOM behaviour stay
-  un-unit-tested (all bound behind seams the suite drives). The two Firefox
-  browser checks (header surface, action-row rhythm) are non-CI.
+  un-unit-tested (all bound behind seams the suite drives). The three Firefox
+  browser checks (header surface, action-row rhythm, content width) are non-CI.
 - Docs site (opensendform.com/guides/…) links are agreed permanent URLs but the
-  site is not yet live (now includes /guides/local-testing for the Mailpit link).
+  site is not yet live.
 
 ## Open items
-None blocking. QUESTIONS.md carries prior notes plus five non-blocking
-status-tab/rebrand decisions (package.json name left per literal instruction;
-composer name `opensendform/osf-php`; rebrand sweep scope; monitor staleness
-window; world-writable probe directory set).
+None blocking. QUESTIONS.md carries prior notes plus three non-blocking
+installer-polish-r2 decisions (help-circle glyph implementation, top-skip
+button style, content-width fix verified by assertion rather than by
+reproducing the pixel drift in this dev container's headless Firefox).
 
 ## Planned increment sequence
 0–9 (skeleton → … → synthetic monitoring) + hardening sweep + onboarding v2 +
-chrome/rhythm/onboarding + cron-noise/monitor-cost + Status tab + rebrand.
-ALL DONE — v0.2.0 ready.
+chrome/rhythm/onboarding + cron-noise/monitor-cost + Status tab + rebrand +
+installer-polish-r2. ALL DONE — v0.2.0 ready.

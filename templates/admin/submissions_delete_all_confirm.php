@@ -19,7 +19,7 @@ $backUrl = $scoped ? '/admin/submissions?status=' . rawurlencode($status) : '/ad
         submission<?= $count === 1 ? '' : 's' ?> with status
         <strong><?= h($status) ?></strong>.
     <?php else: ?>
-        <strong>every</strong> submission — all
+        <strong>every</strong> submission - all
         <strong><?= h((string) $count) ?></strong> of them, across every form.
     <?php endif; ?>
 </p>

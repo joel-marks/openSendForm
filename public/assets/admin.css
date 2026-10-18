@@ -19,6 +19,15 @@
 
 html {
     -webkit-text-size-adjust: 100%;
+    /* Reserve the vertical scrollbar's gutter at ALL times, whether or not
+       the current page is tall enough to need it. Without this, a page tall
+       enough to scroll narrows the viewport by the scrollbar's width while a
+       short page does not, so the SAME .container rule (width 100%, capped
+       at a max-width) resolves to a different pixel width purely as a
+       function of page height - the structural cause of content rendering
+       1-2px narrower on some admin tabs (Email, Admins, Status) than on
+       others. */
+    scrollbar-gutter: stable;
 }
 
 body {
@@ -562,6 +571,19 @@ td .osf-actions,
     margin-right: auto;
 }
 
+/* The standard top-of-step "Skip" control: right-aligned, directly under the
+   step title, for every skippable step except the last (Bot protection),
+   whose skip stays in the bottom action row next to the primary button. */
+.osf-step-skip-top {
+    display: flex;
+    justify-content: flex-end;
+    margin: 0 0 var(--osf-space-4);
+}
+
+.osf-step-skip-top .osf-link-button {
+    margin: 0;
+}
+
 /* A toolbar row that pairs a filter/search bar with a separate action off to
    the side (e.g. the submissions filter bar + "Retry all due now"): the two
    groups sit on one row with clear separation, wrapping gracefully. */
@@ -791,10 +813,22 @@ section > h1:first-child { margin-top: 0; }
 
 /* Checkbox rendered as the switch (the mail "send emails" toggle): the same
    track + thumb as the button switch above, driven by :checked instead of
-   aria-pressed. Degrades to a normal checkbox with no CSS. */
+   aria-pressed. Degrades to a normal checkbox with no CSS.
+   width/height are repeated here (not just inherited from .osf-switch)
+   because the generic `input[type="checkbox"], input[type="radio"]` rule
+   above is MORE specific than the bare `.osf-switch` class (an attribute
+   selector outweighs a class) and would otherwise win the width cascade,
+   collapsing the switch to its native checkbox size — the bug that made
+   this instance render unstyled and collide with its label text while the
+   <button class="osf-switch"> instance (not an <input>, so that rule never
+   applies to it) rendered correctly. Repeating the two properties here, at
+   the highest-specificity selector for this element, is the single-source
+   fix: both markup patterns now resolve to the same rendered size. */
 input[type="checkbox"].osf-switch {
     appearance: none;
     -webkit-appearance: none;
+    width: 2.25rem;
+    height: 1.25rem;
     margin: 0;
     vertical-align: middle;
 }
@@ -853,6 +887,28 @@ input[type="checkbox"].osf-switch:focus-visible {
 /* Small hint variants used beside form fields. */
 .osf-hint-warn { color: var(--osf-danger); }
 .osf-source { color: var(--osf-text-subtle); }
+
+/* The dev-only Mailpit "?" help affordance: the glyph sits inside a small
+   circle rather than reading as a plain inline link. */
+.osf-help-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    border: 1px solid var(--osf-border);
+    border-radius: 50%;
+    color: var(--osf-text-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1;
+    vertical-align: middle;
+}
+
+.osf-help-link:hover {
+    color: var(--osf-text);
+    text-decoration: none;
+}
 
 /* --- Badges & status pills -------------------------------------------- */
 

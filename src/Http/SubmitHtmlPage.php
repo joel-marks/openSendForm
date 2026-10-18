@@ -39,7 +39,7 @@ final class SubmitHtmlPage
             $body = self::page(
                 'Message sent',
                 'Message sent',
-                'Thanks — your message has been sent.',
+                'Thanks - your message has been sent.',
                 $backUrl
             );
             $status = 200;

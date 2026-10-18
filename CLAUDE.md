@@ -24,6 +24,10 @@ site owner.
   email header, argon2id for passwords.
 - Dev email goes to Mailpit (host: mailpit, port: 1025). Never configure
   a real SMTP server in this environment.
+- No em dashes in user-facing copy. User-facing strings (templates,
+  installer, CLI output, flash/error messages, README/INSTALL.txt) never
+  use the em dash (—); use a plain hyphen "-" instead, or restructure the
+  sentence. Source-code comments and docblocks are exempt.
 
 ## Project state files — maintain every sprint
 These files are read by the project architect between sprints. Keeping

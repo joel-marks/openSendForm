@@ -328,7 +328,7 @@ final class SubmissionsController
             DeliveryService::RESULT_SENT    => "Submission #{$id} delivered.",
             DeliveryService::RESULT_FAILED  => "Submission #{$id} still failing; another retry is scheduled.",
             DeliveryService::RESULT_DEAD    => "Submission #{$id} has exhausted its retries and is now dead.",
-            DeliveryService::RESULT_SKIPPED => "Submission #{$id} was not attempted — email sending is disabled.",
+            DeliveryService::RESULT_SKIPPED => "Submission #{$id} was not attempted - email sending is disabled.",
             default                         => "Submission #{$id} could not be retried.",
         };
     }

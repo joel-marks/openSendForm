@@ -246,8 +246,26 @@ final class MailWizardHttpTest extends TestCase
         $this->login();
         $body = (string) $this->get('/admin/mail')->getBody();
         self::assertStringContainsString('data-mailpit-prefill', $body);
-        self::assertStringContainsString('Fill with local test settings (Mailpit)', $body);
+        self::assertStringContainsString('Use test settings', $body);
         self::assertStringContainsString('https://opensendform.com/guides/local-testing', $body);
+    }
+
+    /**
+     * The prefill must leave no required field empty (an operator previously
+     * found the From name field skipped, so the prefilled form could not be
+     * saved without extra input).
+     */
+    public function testMailpitPrefillFillsEveryRequiredField(): void
+    {
+        $js = (string) file_get_contents(dirname(__DIR__, 2) . '/public/assets/admin.js');
+        self::assertMatchesRegularExpression(
+            "/function initMailpitPrefill\\(\\).*?\\n\\s*\\}/s",
+            $js,
+            'initMailpitPrefill() not found in admin.js'
+        );
+        preg_match("/function initMailpitPrefill\\(\\)(.*?\\n\\})/s", $js, $fn);
+        self::assertStringContainsString("set('mail_from_address'", $fn[1]);
+        self::assertStringContainsString("set('mail_from_name'", $fn[1]);
     }
 
     public function testMailpitPrefillLinkHiddenInProduction(): void
@@ -264,7 +282,7 @@ final class MailWizardHttpTest extends TestCase
 
         $body = (string) $this->get('/admin/mail')->getBody();
         self::assertStringNotContainsString('data-mailpit-prefill', $body);
-        self::assertStringNotContainsString('Fill with local test settings (Mailpit)', $body);
+        self::assertStringNotContainsString('Use test settings', $body);
     }
 
     public function testSaveRejectsInvalidFromAddress(): void

@@ -132,7 +132,7 @@ $returnQuery = $returnParams === [] ? '' : '?' . http_build_query($returnParams)
                     <td data-label="Attempts"><?= h((string) $row['attempts']) ?></td>
                     <td data-label="Last error">
                         <?php if ($error === ''): ?>
-                            <span aria-hidden="true">—</span>
+                            <span aria-hidden="true">-</span>
                         <?php elseif (mb_strlen($error) <= 60): ?>
                             <?= h($error) ?>
                         <?php else: ?>

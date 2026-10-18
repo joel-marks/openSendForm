@@ -66,7 +66,7 @@ $renderCheck = static function (array $check) use ($domain): void {
 </p>
 
 <p class="osf-flash osf-flash--info" role="status">
-    These records concern the <strong>sending domain only</strong> — the domain
+    These records concern the <strong>sending domain only</strong> - the domain
     you send mail <em>from</em>. Recipients are unlimited and need no DNS changes:
     people receiving your form emails do not have to set anything up.
 </p>
@@ -81,7 +81,7 @@ $renderCheck = static function (array $check) use ($domain): void {
     <p class="osf-flash osf-flash--info" role="status">
         <strong><?= h($domain) ?></strong> looks like a placeholder or local
         testing domain, so it has no public DNS records to publish. Deliverability
-        checks apply to a <strong>real domain you own</strong> — set your From
+        checks apply to a <strong>real domain you own</strong> - set your From
         address to an address at that domain on the <a href="/admin/mail">Email</a>
         tab and save, then the records to add will appear here.
     </p>

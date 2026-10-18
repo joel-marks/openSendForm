@@ -19,7 +19,7 @@ $badge = [
 <p>
     openSendForm checks your hosting before installing. Anything marked
     <strong>Action needed</strong> must be fixed before you can continue.
-    <strong>Heads up</strong> items are optional — you can install without them.
+    <strong>Heads up</strong> items are optional - you can install without them.
 </p>
 
 <div class="osf-table-wrap">

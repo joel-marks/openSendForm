@@ -107,6 +107,39 @@ final class AppbarTest extends TestCase
         self::assertStringContainsString('<title>osf - Sign in</title>', $body);
     }
 
+    // --- Row 1 order: account innermost, Docs next, theme toggle far right -
+
+    public function testFullAppbarRow1OrderIsAccountThenDocsThenThemeToggle(): void
+    {
+        $this->login();
+        $body = (string) $this->get('/admin')->getBody();
+
+        $account = strpos($body, 'osf-account-menu');
+        $docs = strpos($body, 'osf-nav-docs');
+        $toggle = strpos($body, 'osf-theme-toggle');
+
+        self::assertNotFalse($account);
+        self::assertNotFalse($docs);
+        self::assertNotFalse($toggle);
+        self::assertTrue($account < $docs, 'Account menu must come before Docs in row 1');
+        self::assertTrue($docs < $toggle, 'Docs must come before the theme toggle in row 1');
+    }
+
+    public function testChromeOnlyAppbarShowsDocsAndThemeToggleButNoAccountMenu(): void
+    {
+        $body = (string) $this->get('/admin/login')->getBody();
+
+        self::assertStringContainsString('osf-nav-docs', $body);
+        self::assertStringContainsString('osf-theme-toggle', $body);
+        self::assertStringNotContainsString('osf-account-menu', $body);
+
+        $docs = strpos($body, 'osf-nav-docs');
+        $toggle = strpos($body, 'osf-theme-toggle');
+        self::assertNotFalse($docs);
+        self::assertNotFalse($toggle);
+        self::assertTrue($docs < $toggle, 'Docs must come before the theme toggle in row 1');
+    }
+
     public function testHtmlErrorPageRendersOneChromeOnlyAppbar(): void
     {
         // An unknown admin path 404s through the ErrorHandler as an HTML page.

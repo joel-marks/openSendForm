@@ -86,7 +86,7 @@ use function OpenSendForm\Admin\icon;
                             <a href="/admin/admins/<?= h((string) $id) ?>/delete" role="button" class="osf-danger osf-btn-sm"><?= icon('trash-2') ?> Delete</a>
                         </div>
                     <?php else: ?>
-                        <span aria-hidden="true">&mdash;</span>
+                        <span aria-hidden="true">-</span>
                     <?php endif; ?>
                 </td>
             </tr>

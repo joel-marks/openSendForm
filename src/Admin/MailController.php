@@ -108,7 +108,7 @@ final class MailController
         // login). An empty username means "no auth". A password with no username
         // cannot be used, so reject that combination plainly.
         if ($user === '' && $passwordInput !== '') {
-            return self::invalid($c, $response, $data, 'Enter a username to use with that password — or leave both the username and password blank if your server sends without a login.');
+            return self::invalid($c, $response, $data, 'Enter a username to use with that password - or leave both the username and password blank if your server sends without a login.');
         }
 
         $changes = [

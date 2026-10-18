@@ -100,7 +100,7 @@ if (($installUrl) !== '' && $formKey !== null) {
             <small>
                 Submitted fields are always held while a message is in flight so a
                 failed send can be retried. With this <strong>off</strong> (the
-                default), that content is cleared once the email is delivered — only
+                default), that content is cleared once the email is delivered - only
                 metadata is kept. Turn it <strong>on</strong> to keep the submitted
                 content in storage after a successful delivery too.
             </small>
@@ -184,7 +184,7 @@ if (($installUrl) !== '' && $formKey !== null) {
             this installation directly, so it still works if JavaScript is off;
             the script adds inline validation, a sent confirmation and spam
             protection. Edit the fields between the <code>&lt;label&gt;</code>
-            tags to suit — only the wrapping <code>&lt;form&gt;</code> and the
+            tags to suit - only the wrapping <code>&lt;form&gt;</code> and the
             script line must stay as-is.</p>
         <p class="osf-copy">
             <button type="button" class="secondary outline" data-copy="<?= h($snippet) ?>"><?= icon('copy') ?> Copy embed code</button>

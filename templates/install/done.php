@@ -68,9 +68,8 @@ $rows = [
 </div>
 
 <p><small>
-    <strong>The installer is now locked, and that’s safe.</strong> A visitor
-    cannot re-run setup or take over your site. If you ever genuinely need to
-    run the installer again, follow
+    <strong>The installer is now locked.</strong> A visitor cannot re-run
+    setup. If you need to run the installer again, follow
     <a href="https://opensendform.com/guides/reinstall" target="_blank" rel="noopener">the reinstall guide</a>.
 </small></p>
 

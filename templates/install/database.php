@@ -17,7 +17,7 @@ $driver = $driver === 'mysql' ? 'mysql' : 'sqlite';
 
 <p>
     openSendForm needs a database to keep your forms and the submissions people
-    send. If you’re not sure, choose the <strong>built-in database</strong> —
+    send. If you’re not sure, choose the <strong>built-in database</strong> -
     it needs nothing else and works on almost every host.
 </p>
 
@@ -34,14 +34,14 @@ $driver = $driver === 'mysql' ? 'mysql' : 'sqlite';
             <label>
                 <input type="radio" name="db_driver" value="sqlite" data-db-driver
                        <?= $driver === 'sqlite' ? 'checked' : '' ?>>
-                Built-in database (SQLite) — recommended, nothing to set up.
+                Built-in database (SQLite) - recommended, nothing to set up.
             </label>
         </div>
         <div class="osf-field">
             <label>
                 <input type="radio" name="db_driver" value="mysql" data-db-driver
                        <?= $driver === 'mysql' ? 'checked' : '' ?>>
-                MySQL database — only if your host told you to use one.
+                MySQL database
             </label>
         </div>
     </fieldset>

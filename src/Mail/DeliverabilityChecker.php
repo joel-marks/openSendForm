@@ -31,7 +31,7 @@ final class DeliverabilityChecker
 {
     /** Where every record is added — the same for all three. */
     private const WHERE =
-        'Add this in your domain\'s DNS manager — at your domain registrar, or in '
+        'Add this in your domain\'s DNS manager - at your domain registrar, or in '
         . 'cPanel under "Zone Editor".';
 
     public function __construct(private DnsResolver $resolver)

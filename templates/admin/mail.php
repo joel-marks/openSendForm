@@ -32,7 +32,7 @@ use function OpenSendForm\Admin\icon;
 
 <p>
     Set up how openSendForm sends the emails your forms produce. Enter your
-    mailbox’s SMTP details, turn sending on, then send yourself a test — the
+    mailbox’s SMTP details, turn sending on, then send yourself a test - the
     email arriving is the proof it all works. The DNS records that keep your
     messages out of spam live on the <a href="/admin/deliverability">Deliverability</a> tab.
 </p>
@@ -74,7 +74,7 @@ use function OpenSendForm\Admin\icon;
             </label>
             <small>On, passing submissions are emailed to the form’s recipient.
                 Off is <strong>storage-only mode</strong>: submissions are still
-                saved, they just aren’t emailed — useful while testing or before
+                saved, they just aren’t emailed - useful while testing or before
                 launch.</small>
         </div>
 
@@ -124,23 +124,23 @@ use function OpenSendForm\Admin\icon;
 
     <p><small>Both commands end in <code>--quiet</code>: cPanel emails whatever a
         cron job prints, so a quiet run that finds nothing wrong prints nothing
-        and sends no mail — an email from one of these jobs means something needs
+        and sends no mail - an email from one of these jobs means something needs
         attention.</small></p>
 
-    <h3>Job 1 — monitoring</h3>
+    <h3>Job 1 - monitoring</h3>
     <p class="osf-copy">
         <code><?= h($cronMonitorCmd) ?></code>
         <button type="button" class="secondary outline" data-copy="<?= h($cronMonitorCmd) ?>"><?= icon('copy') ?> Copy</button>
     </p>
 
-    <h3>Job 2 — retry failed emails</h3>
+    <h3>Job 2 - retry failed emails</h3>
     <p class="osf-copy">
         <code><?= h($cronRetryCmd) ?></code>
         <button type="button" class="secondary outline" data-copy="<?= h($cronRetryCmd) ?>"><?= icon('copy') ?> Copy</button>
     </p>
 
     <p><small>If cron reports that the PHP path (<code><?= h($cronPhp) ?></code>) does
-        not work, it is usually <code>/usr/local/bin/php</code> — replace the path
+        not work, it is usually <code>/usr/local/bin/php</code> - replace the path
         at the start of each command with that.</small></p>
 
     <?php if ($cronDone): ?>

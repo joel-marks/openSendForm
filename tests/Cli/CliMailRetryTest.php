@@ -60,7 +60,7 @@ final class CliMailRetryTest extends TestCase
         $result = $this->osf(['mail:retry', '--quiet']);
 
         self::assertSame(0, $result['code'], $result['stderr']);
-        self::assertStringContainsString('mail:retry — attempted 1', $result['stdout']);
+        self::assertStringContainsString('mail:retry - attempted 1', $result['stdout']);
     }
 
     public function testNonQuietAlwaysPrintsEvenWithNothingDue(): void
@@ -70,7 +70,7 @@ final class CliMailRetryTest extends TestCase
         $result = $this->osf(['mail:retry']);
 
         self::assertSame(0, $result['code'], $result['stderr']);
-        self::assertStringContainsString('mail:retry — attempted 0', $result['stdout']);
+        self::assertStringContainsString('mail:retry - attempted 0', $result['stdout']);
     }
 
     public function testUnknownOptionRejected(): void

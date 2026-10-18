@@ -344,11 +344,11 @@ final class DesignSystemTest extends TestCase
         self::assertStringContainsString('<summary class="osf-nav-link osf-admin-name">', $nav);
         self::assertStringContainsString("icon('chevron-down'", $nav);
 
-        // The panel holds the account link, the external Reinstall guide link
-        // (styled like Docs: new tab + noopener) and the logout form.
+        // The panel holds the account link and the logout form. The reinstall
+        // guide link lives on the dashboard instead (fix/installer-polish-r2).
         self::assertStringContainsString('class="osf-account-panel"', $nav);
         self::assertStringContainsString('href="/admin/account">Your account</a>', $nav);
-        self::assertStringContainsString('href="https://opensendform.com/guides/reinstall"', $nav);
+        self::assertStringNotContainsString('https://opensendform.com/guides/reinstall', $nav);
         self::assertStringContainsString('action="/admin/logout"', $nav);
         self::assertStringContainsString('osf-account-item--danger', $nav);
 
@@ -417,6 +417,85 @@ final class DesignSystemTest extends TestCase
         $css = self::read('public/assets/admin.css');
         self::assertMatchesRegularExpression('/\.osf-switch\s*\{/', $css);
         self::assertMatchesRegularExpression('/\.osf-switch\[aria-pressed="true"\]\s*\{[^}]*--osf-success/s', $css);
+    }
+
+    // --- Content-width drift: scrollbar gutter reserved globally (Task 6) --
+
+    /**
+     * Root cause: a page tall enough to need a vertical scrollbar narrows the
+     * viewport by the scrollbar's width, while a short page does not — so the
+     * SAME `.container { width: 100%; max-width: 60rem }` rule resolved to a
+     * different pixel width purely as a function of page height (observed on
+     * Email/Admins/Status, 1-2px narrower than shorter tabs). Reserving the
+     * gutter on `html` at all times, in exactly one place, makes every page's
+     * available width identical regardless of whether it happens to scroll.
+     * Pixel-level verification across real admin pages lives in
+     * tests/browser/content-width-check.mjs (non-CI, needs a real browser).
+     */
+    public function testScrollbarGutterIsReservedGloballyOnTheRoot(): void
+    {
+        $css = self::read('public/assets/admin.css');
+
+        self::assertMatchesRegularExpression('/html\s*\{([^}]*)\}/s', $css, 'html rule not found');
+        preg_match('/html\s*\{([^}]*)\}/s', $css, $block);
+        self::assertStringContainsString(
+            'scrollbar-gutter: stable',
+            $block[1],
+            'html must reserve a stable scrollbar gutter so content width does not depend on page height'
+        );
+
+        // Single source: exactly one `html { ... }` rule carries it, not a
+        // per-page or per-component override.
+        self::assertSame(1, preg_match_all('/scrollbar-gutter:\s*stable/', $css));
+    }
+
+    // --- Switch component: one markup pattern, one size across both the
+    // <button role="switch"> (admins status column) and the
+    // <input type="checkbox" class="osf-switch"> (mail "send emails" toggle)
+    // instances (fix/installer-polish-r2, Task 7). The checkbox instance
+    // previously collapsed to its native size because the browser-default
+    // `input[type="checkbox"], input[type="radio"] { width: auto }` rule is
+    // MORE specific than the bare `.osf-switch` class and won the width
+    // cascade; the fix repeats width/height on the checkbox-specific,
+    // higher-specificity selector so both markup patterns resolve to the
+    // same rendered size regardless of future cascade changes elsewhere in
+    // the stylesheet. -------------------------------------------------------
+
+    public function testSwitchCheckboxMarkupMatchesButtonMarkupPattern(): void
+    {
+        $mail = self::read('templates/admin/mail.php');
+        self::assertMatchesRegularExpression(
+            '/<input type="checkbox" class="osf-switch" name="mail_enabled" value="1"\s*\n\s*role="switch"/',
+            $mail,
+            'The mail-enabled toggle must use the shared .osf-switch class and role="switch", like every other switch'
+        );
+
+        $admins = self::read('templates/admin/admins.php');
+        self::assertMatchesRegularExpression('/class="osf-switch" role="switch"/', $admins);
+    }
+
+    public function testSwitchCheckboxRuleLocksTheSameSizeAsTheButtonVariant(): void
+    {
+        $css = self::read('public/assets/admin.css');
+
+        preg_match('/(?<!input\[type="checkbox"\]\.)\.osf-switch\s*\{([^}]*)\}/s', $css, $base);
+        self::assertNotEmpty($base, '.osf-switch base rule not found');
+        preg_match('/width:\s*([\d.]+rem)/', $base[1], $baseWidth);
+        preg_match('/height:\s*([\d.]+rem)/', $base[1], $baseHeight);
+        self::assertNotEmpty($baseWidth, '.osf-switch must declare an explicit width');
+        self::assertNotEmpty($baseHeight, '.osf-switch must declare an explicit height');
+
+        preg_match('/input\[type="checkbox"\]\.osf-switch\s*\{([^}]*)\}/s', $css, $checkbox);
+        self::assertNotEmpty($checkbox, 'input[type="checkbox"].osf-switch rule not found');
+
+        // The checkbox-specific rule (the highest-specificity selector for
+        // this element) must repeat the SAME width/height as the base rule —
+        // this is what stops the browser's own
+        // `input[type="checkbox"], input[type="radio"] { width: auto }`
+        // default (more specific than the bare `.osf-switch` class) from
+        // winning the cascade and collapsing the control.
+        self::assertStringContainsString('width: ' . $baseWidth[1], $checkbox[1]);
+        self::assertStringContainsString('height: ' . $baseHeight[1], $checkbox[1]);
     }
 
     // --- Forms page: equal-width small buttons -----------------------------

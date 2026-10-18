@@ -31,7 +31,7 @@ $yesNo = static fn (bool $v): string => $v ? 'Yes' : 'No';
 ?>
 <h1>Status</h1>
 
-<p>A live health check of this installation — re-probed every time you open
+<p>A live health check of this installation - re-probed every time you open
     this page. Anything marked in red needs your attention.</p>
 
 <section>
@@ -145,7 +145,7 @@ $yesNo = static fn (bool $v): string => $v ? 'Yes' : 'No';
         <?php endif; ?>
         <p>
             <strong>Last run:</strong> <?= h((string) $mon['last_run_at']) ?> UTC
-            —
+            -
             <?php if ($mon['ok']): ?>
                 <span class="osf-badge osf-badge--ok">Passed</span>
             <?php else: ?>

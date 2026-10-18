@@ -189,7 +189,7 @@ final class Requirements
             $ok ? self::PASS : self::WARN,
             $ok ? '' : 'You are not on a secure (https://) connection. You can still install, but '
                 . 'sign in and set up over HTTPS so your admin password is never sent in the '
-                . 'clear — most cPanel hosts offer a free "Let\'s Encrypt" certificate.'
+                . 'clear - most cPanel hosts offer a free "Let\'s Encrypt" certificate.'
         );
     }
 

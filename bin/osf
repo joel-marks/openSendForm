@@ -551,7 +551,7 @@ function cmdMailRetry(Database $db, Config $config, array $args): int
 
     if (!$quiet || $summary['attempted'] > 0) {
         fwrite(STDOUT, sprintf(
-            "mail:retry — attempted %d: sent %d, failed %d, dead %d, skipped %d\n",
+            "mail:retry - attempted %d: sent %d, failed %d, dead %d, skipped %d\n",
             $summary['attempted'],
             $summary[DeliveryService::RESULT_SENT],
             $summary[DeliveryService::RESULT_FAILED],
@@ -600,7 +600,7 @@ function cmdMailTest(Config $config, array $args): int
         return 1;
     }
 
-    fwrite(STDOUT, "mail:test OK — message sent to {$to} via {$config->smtpHost()}:{$config->smtpPort()}\n");
+    fwrite(STDOUT, "mail:test OK - message sent to {$to} via {$config->smtpHost()}:{$config->smtpPort()}\n");
 
     return 0;
 }
@@ -620,12 +620,12 @@ function cmdMailStatus(Config $config): int
 
     fwrite(STDOUT, "Email status\n============\n");
     if ($config->mailEnabled() && $host !== '') {
-        fwrite(STDOUT, "Email sending is ON — submissions will be emailed via {$host}.\n\n");
+        fwrite(STDOUT, "Email sending is ON - submissions will be emailed via {$host}.\n\n");
     } elseif ($config->mailEnabled() && $host === '') {
         fwrite(STDOUT, "PROBLEM: sending is on but no SMTP host is set, so nothing can be emailed. "
             . "Set the SMTP host in the admin panel (Email).\n\n");
     } else {
-        fwrite(STDOUT, "Email sending is OFF — submissions are stored but not emailed. "
+        fwrite(STDOUT, "Email sending is OFF - submissions are stored but not emailed. "
             . "Turn it on in the admin panel (Email) once your SMTP details are set.\n\n");
     }
 
@@ -774,7 +774,7 @@ function cmdMigrate(): int
     $paths = Paths::production();
 
     if (!$paths->isInstalled()) {
-        fwrite(STDERR, "openSendForm is not installed yet — run the browser installer first.\n");
+        fwrite(STDERR, "openSendForm is not installed yet - run the browser installer first.\n");
         return 1;
     }
 
@@ -925,12 +925,12 @@ function cmdMonitorRun(Database $db, Config $config, Paths $paths, array $args):
         // Plain-language verdict for a non-technical operator, then the
         // machine-parsable detail lines beneath.
         if ($summary['checks_ran'] === 0) {
-            fwrite(STDOUT, "No forms yet — create your first form in the admin panel and monitoring will begin.\n");
+            fwrite(STDOUT, "No forms yet - create your first form in the admin panel and monitoring will begin.\n");
         } elseif ($summary['failures'] === 0) {
-            fwrite(STDOUT, "All checks passed — your forms are being monitored.\n");
+            fwrite(STDOUT, "All checks passed - your forms are being monitored.\n");
         } else {
             fwrite(STDOUT, sprintf(
-                "PROBLEM: %d of %d checks failed — see the details below.\n",
+                "PROBLEM: %d of %d checks failed - see the details below.\n",
                 $summary['failures'],
                 $summary['checks_ran']
             ));
@@ -938,13 +938,13 @@ function cmdMonitorRun(Database $db, Config $config, Paths $paths, array $args):
 
         if ($summary['deferred'] > 0) {
             fwrite(STDOUT, sprintf(
-                "Deferred %d form(s) to the next run (time budget reached) — not a failure.\n",
+                "Deferred %d form(s) to the next run (time budget reached) - not a failure.\n",
                 $summary['deferred']
             ));
         }
 
         fwrite(STDOUT, sprintf(
-            "monitor:run — checked %d form(s): %d ok, %d failed; purged %d synthetic; %d alert(s) sent.\n",
+            "monitor:run - checked %d form(s): %d ok, %d failed; purged %d synthetic; %d alert(s) sent.\n",
             $summary['checks_ran'],
             $summary['checks_ran'] - $summary['failures'],
             $summary['failures'],
@@ -954,7 +954,7 @@ function cmdMonitorRun(Database $db, Config $config, Paths $paths, array $args):
 
         foreach ($summary['results'] as $result) {
             fwrite(STDOUT, sprintf(
-                "  [%s] #%d %s — %s\n",
+                "  [%s] #%d %s - %s\n",
                 $result['ok'] ? 'OK' : '--',
                 $result['form_id'],
                 $result['form_name'],
@@ -1007,7 +1007,7 @@ function cmdMonitorStatus(Database $db, Config $config, Paths $paths): int
     if ($failing === 0) {
         fwrite(STDOUT, "All monitored forms are OK.\n\n");
     } else {
-        fwrite(STDOUT, sprintf("PROBLEM: %d monitored form(s) are failing — see below.\n\n", $failing));
+        fwrite(STDOUT, sprintf("PROBLEM: %d monitored form(s) are failing - see below.\n\n", $failing));
     }
 
     foreach ($rows as $row) {
@@ -1098,20 +1098,20 @@ function usage(): string
       form:turnstile enables per-form Cloudflare Turnstile (both keys
         required) or --disable clears both; the secret is never exposed.
       form:delete permanently removes a form and CASCADES to all its stored
-        submissions, printing both counts; refuses an unknown ID. No prompt —
+        submissions, printing both counts; refuses an unknown ID. No prompt -
         shell access is already the higher privilege.
       admin:create prompts for the password interactively (hidden when a
         TTY is available); it must be at least 12 characters.
-      admin:list prints every admin — id, name, email, active state and 2FA
-        state — oldest first; metadata only. Run it to find the id that
+      admin:list prints every admin - id, name, email, active state and 2FA
+        state - oldest first; metadata only. Run it to find the id that
         admin:reset-2fa and admin:delete take.
       admin:delete permanently removes an admin; refuses the last active
-        admin. No password prompt — shell access is already the higher
+        admin. No password prompt - shell access is already the higher
         privilege.
       admin:reset-2fa clears an admin's TOTP secret and recovery codes and
         marks 2FA unenrolled, so their next login needs only the password and
         the dashboard prompts a fresh enrolment. Any old recovery codes stop
-        working. Refuses an unknown ID. No password prompt — shell access is
+        working. Refuses an unknown ID. No password prompt - shell access is
         already the higher privilege. This and admin:create are the two ways
         to recover a locked-out install from the cPanel Terminal (see the
         README "Locked out?" runbook): admin:create for a lost password,
@@ -1124,7 +1124,7 @@ function usage(): string
         cron stdout, so a quiet run stays silent unless it actually sent).
       mail:status prints the mail config state (no secrets) and runs live
         SPF/DKIM/DMARC DNS lookups for the From domain (skips when offline).
-      submissions:list shows metadata only — never submitted content.
+      submissions:list shows metadata only - never submitted content.
       submissions:purge bulk-deletes submissions and prints the count: no
         flags removes every submission, --status limits to one status, --form
         removes one form's submissions (unknown ID refused). --status and
@@ -1138,7 +1138,7 @@ function usage(): string
         alert. A time budget (MONITOR_TIME_BUDGET_SECONDS) caps the run: the
         canary always runs, then others defer to the next run once it is spent.
         --quiet prints nothing unless a check failed, an alert was sent or an
-        alert could not be sent — so under cPanel the only mail you get is one
+        alert could not be sent - so under cPanel the only mail you get is one
         that needs attention. Recommended cPanel cron (hourly):
           0 * * * * /usr/local/bin/php /home/USER/osf-php/bin/osf monitor:run --quiet
         (adjust the PHP path and project path for your host; the same style as
@@ -1152,7 +1152,7 @@ function usage(): string
         Every other command already auto-migrates at boot, but this is the
         way to apply an update BEFORE running anything else. Safe to re-run.
       version prints the app version, the current schema version and the
-        number of pending migrations — read-only, and never auto-migrates.
+        number of pending migrations - read-only, and never auto-migrates.
 
     TXT;
 }

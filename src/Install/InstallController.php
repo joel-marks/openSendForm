@@ -261,7 +261,7 @@ final class InstallController
         // login). An empty username means "no auth"; a password with no username
         // cannot be used, so reject that combination plainly.
         if ($user === '' && $password !== '') {
-            return self::renderMailStep($c, $response, $data, 'Enter a username to use with that password — or leave both the username and password blank if your server sends without a login.', 422);
+            return self::renderMailStep($c, $response, $data, 'Enter a username to use with that password - or leave both the username and password blank if your server sends without a login.', 422);
         }
 
         $changes = [

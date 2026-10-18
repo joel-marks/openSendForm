@@ -18,15 +18,20 @@ use function OpenSendForm\Admin\icon;
 <?php require __DIR__ . '/_progress.php'; ?>
 <h1>Set up your scheduled tasks</h1>
 
+<div class="osf-step-skip-top">
+    <button type="submit" name="action" value="later" form="scheduled-step-form"
+            class="osf-link-button">Skip</button>
+</div>
+
 <p>
     openSendForm needs two small jobs that your host runs on a schedule (a
     “cron job”). They keep everything working while nobody is watching:
 </p>
 
 <ul>
-    <li><strong>Monitoring</strong> — checks every hour that your forms still
+    <li><strong>Monitoring</strong> - checks every hour that your forms still
         work and emails you if one stops.</li>
-    <li><strong>Retry failed emails</strong> — re-sends, once an hour, any
+    <li><strong>Retry failed emails</strong> - re-sends, once an hour, any
         submission emails that failed the first time (for example if your mail
         server was briefly unreachable).</li>
 </ul>
@@ -34,7 +39,7 @@ use function OpenSendForm\Admin\icon;
 <div class="osf-flash osf-flash--info" role="status">
     <p>The commands below end in <code>--quiet</code>. cPanel emails you
         whatever a cron job prints, so a quiet run that finds nothing wrong
-        prints nothing and you get no mail — an email from one of these jobs
+        prints nothing and you get no mail - an email from one of these jobs
         then means something actually needs your attention.</p>
     <p><strong>Hourly</strong> is the recommended schedule. On a lower-powered
         shared host you can run the monitoring job less often (say every few
@@ -55,13 +60,13 @@ use function OpenSendForm\Admin\icon;
         so the two jobs don’t run at the same moment.</p>
 </div>
 
-<h2>Job 1 — monitoring</h2>
+<h2>Job 1 - monitoring</h2>
 <p class="osf-copy">
     <code><?= h($monitorCmd) ?></code>
     <button type="button" class="secondary outline" data-copy="<?= h($monitorCmd) ?>"><?= icon('copy') ?> Copy</button>
 </p>
 
-<h2>Job 2 — retry failed emails</h2>
+<h2>Job 2 - retry failed emails</h2>
 <p class="osf-copy">
     <code><?= h($retryCmd) ?></code>
     <button type="button" class="secondary outline" data-copy="<?= h($retryCmd) ?>"><?= icon('copy') ?> Copy</button>
@@ -69,17 +74,16 @@ use function OpenSendForm\Admin\icon;
 
 <p><small>If cron reports that the PHP path (<code><?= h($phpBinary) ?></code>)
     does not work, your host’s PHP command line is usually
-    <code>/usr/local/bin/php</code> — replace the path at the start of each
+    <code>/usr/local/bin/php</code> - replace the path at the start of each
     command with that.</small></p>
 
-<p><small>No rush — if you’d rather do this later, you can. The commands stay
+<p><small>No rush - if you’d rather do this later, you can. The commands stay
     available from the admin <strong>Email</strong> tab, and openSendForm will
     remind you until they’re running.</small></p>
 
-<form method="post" action="/install/scheduled">
+<form method="post" action="/install/scheduled" id="scheduled-step-form">
     <input type="hidden" name="_csrf" value="<?= h($csrf) ?>">
     <div class="osf-actions osf-step-actions">
-        <button type="submit" name="action" value="later" class="secondary outline osf-step-skip">I’ll do this later</button>
         <button type="submit" name="action" value="done"><?= icon('clock') ?> I’ve set these up</button>
     </div>
 </form>

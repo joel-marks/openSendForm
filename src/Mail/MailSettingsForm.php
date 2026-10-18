@@ -34,9 +34,9 @@ final class MailSettingsForm
     public static function encryptionOptions(): array
     {
         return [
-            ['value' => 'starttls', 'port' => '587', 'label' => 'STARTTLS — port 587'],
-            ['value' => 'smtps',    'port' => '465', 'label' => 'SSL/TLS — port 465'],
-            ['value' => 'none',     'port' => '25',  'label' => 'None — only for a local test server'],
+            ['value' => 'starttls', 'port' => '587', 'label' => 'STARTTLS - port 587'],
+            ['value' => 'smtps',    'port' => '465', 'label' => 'SSL/TLS - port 465'],
+            ['value' => 'none',     'port' => '25',  'label' => 'None - only for a local test server'],
         ];
     }
 

@@ -78,7 +78,7 @@ final class InstallerHttpTest extends TestCase
         $welcome = $this->get('/install');
         self::assertSame(200, $welcome->getStatusCode());
         $welcomeBody = (string) $welcome->getBody();
-        self::assertStringContainsString('set up openSendForm', $welcomeBody);
+        self::assertStringContainsString('<h1>Setup</h1>', $welcomeBody);
         self::assertStringContainsString('href="/install/requirements"', $welcomeBody);
         self::assertStringContainsString('Step 1 of 7', $welcomeBody);
 
@@ -285,9 +285,12 @@ final class InstallerHttpTest extends TestCase
             self::assertSame(1, substr_count($body, 'class="osf-appbar"'), "{$route}: one .osf-appbar");
             self::assertStringContainsString('<header class="osf-header"', $body, "{$route}: brand row");
             self::assertStringContainsString('<nav class="osf-tabnav"', $body, "{$route}: tab row");
-            // Chrome-only: no tab strip, no account menu.
+            // Chrome-only: no tab strip, no account menu, but Docs + theme
+            // toggle are shown on every step.
             self::assertStringNotContainsString('osf-tab-link', $body, "{$route}: chrome-only (no tabs)");
             self::assertStringNotContainsString('osf-account-menu', $body, "{$route}: chrome-only (no account menu)");
+            self::assertStringContainsString('osf-nav-docs', $body, "{$route}: Docs link shown");
+            self::assertStringContainsString('osf-theme-toggle', $body, "{$route}: theme toggle shown");
             self::assertStringContainsString('<title>osf - ' . $pageName . '</title>', $body, "{$route}: title");
         }
     }

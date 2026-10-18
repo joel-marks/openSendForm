@@ -295,7 +295,7 @@ final class InstallerService
         return "<?php\n\n"
             . "declare(strict_types=1);\n\n"
             . "/*\n"
-            . " * OpenSendForm configuration — written by the browser installer.\n"
+            . " * openSendForm configuration — written by the browser installer.\n"
             . " *\n"
             . " * This file returns the installed settings. It lives under var/ (outside the\n"
             . " * web root) and is never served, but treat it as private regardless.\n"

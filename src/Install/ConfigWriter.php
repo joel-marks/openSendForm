@@ -104,7 +104,7 @@ final class ConfigWriter
         return "<?php\n\n"
             . "declare(strict_types=1);\n\n"
             . "/*\n"
-            . " * OpenSendForm configuration.\n"
+            . " * openSendForm configuration.\n"
             . " *\n"
             . " * Written by the browser installer and updated by the admin panel (Email\n"
             . " * settings). It lives under var/ (outside the web root) and is never served,\n"

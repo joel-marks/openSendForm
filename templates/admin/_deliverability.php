@@ -36,6 +36,9 @@ $renderCheck = static function (array $check) use ($domain): void {
         <p><small class="osf-source">Source: live DNS lookup of the
             <?= h((string) $check['type']) ?> record at
             <code><?= h((string) ($check['fqdn'] ?? $domain)) ?></code>.</small></p>
+        <?php if ((string) ($check['note'] ?? '') !== ''): ?>
+            <p><small class="osf-source"><?= h((string) $check['note']) ?></small></p>
+        <?php endif; ?>
 
         <?php if ($ok): ?>
             <p><small>Published value:</small></p>

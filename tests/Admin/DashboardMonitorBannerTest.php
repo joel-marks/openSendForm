@@ -21,8 +21,9 @@ use Slim\App;
 use Slim\Psr7\Factory\ServerRequestFactory;
 
 /**
- * The dashboard's synthetic-monitoring banner: shown, naming the form(s),
- * whenever a form's LATEST check failed; absent once a later check passes.
+ * The dashboard's delivery-failure banner: shown, naming the form(s), whenever
+ * a form's latest PASSIVE per-form state (migration 012 kind='form') is
+ * unhealthy; absent once a later recovery row clears it.
  */
 final class DashboardMonitorBannerTest extends TestCase
 {
@@ -40,36 +41,49 @@ final class DashboardMonitorBannerTest extends TestCase
         $this->formId = (int) $form['id'];
     }
 
-    public function testBannerAbsentWhenNoFailingChecks(): void
+    public function testBannerAbsentWhenNoFailingForms(): void
     {
         $checks = new MonitorRepository($this->db);
-        $checks->record($this->formId, '2026-09-09 10:00:00', true, 'delivered');
+        $checks->record($this->formId, '2026-09-09 10:00:00', true, 'ok', MonitorRepository::KIND_FORM);
 
         $body = (string) $this->dashboard()->getBody();
 
-        self::assertStringNotContainsString('Synthetic monitoring detected a problem', $body);
+        self::assertStringNotContainsString('Form delivery is failing', $body);
+    }
+
+    public function testBannerAbsentForACanaryFailure(): void
+    {
+        // A failing CANARY is alerted by email and shown on the Status tab; it
+        // is NOT the per-form delivery banner, so a canary-kind row alone must
+        // not raise it.
+        $checks = new MonitorRepository($this->db);
+        $checks->record($this->formId, '2026-09-09 10:00:00', false, 'boom', MonitorRepository::KIND_CANARY);
+
+        $body = (string) $this->dashboard()->getBody();
+
+        self::assertStringNotContainsString('Form delivery is failing', $body);
     }
 
     public function testBannerNamesTheFailingForm(): void
     {
         $checks = new MonitorRepository($this->db);
-        $checks->record($this->formId, '2026-09-09 10:00:00', false, 'submit returned HTTP 500');
+        $checks->record($this->formId, '2026-09-09 10:00:00', false, 'dead', MonitorRepository::KIND_FORM);
 
         $body = (string) $this->dashboard()->getBody();
 
-        self::assertStringContainsString('Synthetic monitoring detected a problem', $body);
+        self::assertStringContainsString('Form delivery is failing', $body);
         self::assertStringContainsString('Careers', $body);
     }
 
-    public function testAPassingCheckClearsTheBanner(): void
+    public function testARecoveryRowClearsTheBanner(): void
     {
         $checks = new MonitorRepository($this->db);
-        $checks->record($this->formId, '2026-09-09 10:00:00', false, 'boom');
-        $checks->record($this->formId, '2026-09-09 11:00:00', true, 'delivered');
+        $checks->record($this->formId, '2026-09-09 10:00:00', false, 'failed', MonitorRepository::KIND_FORM);
+        $checks->record($this->formId, '2026-09-09 11:00:00', true, 'ok', MonitorRepository::KIND_FORM);
 
         $body = (string) $this->dashboard()->getBody();
 
-        self::assertStringNotContainsString('Synthetic monitoring detected a problem', $body);
+        self::assertStringNotContainsString('Form delivery is failing', $body);
     }
 
     // --- Harness (mirrors DashboardStaleSchemaTest) -----------------------

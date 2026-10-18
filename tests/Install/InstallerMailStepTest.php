@@ -73,6 +73,20 @@ final class InstallerMailStepTest extends TestCase
         $this->rrmdir($this->base);
     }
 
+    public function testSkipControlIsASecondaryButtonWiredToTheForm(): void
+    {
+        $body = (string) $this->get('/install/mail')->getBody();
+
+        // The top-right Skip is a real button (secondary variant), wired to the
+        // step form via the HTML form= attribute so it works with JS off - not
+        // the old text link (osf-link-button).
+        self::assertMatchesRegularExpression(
+            '/<button[^>]*value="skip"[^>]*form="mail-step-form"[^>]*class="secondary"/s',
+            $body
+        );
+        self::assertStringNotContainsString('osf-link-button', $body);
+    }
+
     public function testSkipLeavesEmailOffAndReachesFinish(): void
     {
         $mailPage = $this->get('/install/mail');

@@ -129,9 +129,11 @@ function osf_build_install_txt(string $version): string
        Both commands end in "--quiet": cPanel emails whatever a cron job prints,
        so a quiet run that finds nothing wrong prints nothing and you get no
        mail — an email from one of these jobs then means something needs
-       attention. Hourly is the recommended schedule; a lower-powered shared
+       attention. Monitoring is zero-noise: when every form is healthy it sends
+       no mail at all, and its hourly check never emails the people who submit
+       your forms. Hourly is the recommended schedule; a lower-powered shared
        host can run the monitoring job less often (every few hours) by choosing
-       a different schedule, and it still spaces its per-form checks itself.
+       a different schedule - each run does a single quick check.
 
     A note on testing email: a test message sent to a mailbox ON THE SAME
     SERVER can bypass the SPF/DKIM/DMARC checks that real recipients apply, so

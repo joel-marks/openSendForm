@@ -25,7 +25,7 @@ use function OpenSendForm\Admin\h;
 
 <div class="osf-step-skip-top">
     <button type="submit" name="action" value="skip" form="mail-step-form"
-            formnovalidate class="osf-link-button">Skip</button>
+            formnovalidate class="secondary">Skip</button>
 </div>
 
 <p>

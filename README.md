@@ -229,42 +229,55 @@ is unreachable it is left `failed` with a scheduled retry; `php bin/osf
 mail:retry --quiet` (wire it to cron on cPanel) re-sends everything due. A quick
 transport check without a submission: `php bin/osf mail:test --to=you@example.com`.
 
-## Synthetic monitoring (optional, recommended)
+## Monitoring (optional, recommended)
 
-So you learn of breakage before your visitors do, `php bin/osf monitor:run`
-sends a real *fake-but-marked* submission through the FULL public pipeline -
-token fetch, min-time wait, POST, store, and SMTP delivery to the form's real
-recipient (subject/body carry an unmistakable `[openSendForm monitor]` marker
-so you can filter them). It checks a canary form every run and each other form
-at most once a day, staggered. A check fails if any step errors or the
-submission is not delivered within the send timeout; on an ok→fail (or
-fail→ok) transition it emails one alert (to `MONITOR_ALERT_EMAIL`, or the first
-admin), and the dashboard shows a red banner while any form is failing.
-Synthetic submissions are excluded from the dashboard stats and the default
-submissions list (see the "synthetic" filter) and auto-purged after a couple of
-days. Wire it to cron on cPanel, hourly, alongside `mail:retry`:
+Monitoring here is **zero-noise**: when everything is healthy, openSendForm
+sends no email at all. Any message you get from it means *act now*. `php bin/osf
+monitor:run` has two jobs.
+
+**The dark canary.** Every run exercises the FULL public pipeline against one
+active form - token fetch, min-time wait, POST, store, and a real SMTP
+transaction - so you learn of a broken pipeline before your visitors do. The
+probe is **dark**: its delivery is addressed to the service's own From/send
+address, never the form's real recipient, so the accepted message lands in your
+own service mailbox (carrying the `[openSendForm monitor]` marker) and reaches
+no one else. The SMTP transaction genuinely happening is the proof the pipeline
+works; nothing about the mail layer is faked. The synthetic submission is
+flagged (excluded from dashboard stats and the default submissions list - see
+the "synthetic" filter) and auto-purged after a couple of days. On an ok→fail
+or fail→ok transition of the canary it emails one alert (to
+`MONITOR_ALERT_EMAIL`, or the first admin).
+
+**Passive per-form observation.** Every other form is covered by its real
+traffic, with no synthetic submissions sent on its behalf. A real submission
+that fails to deliver already enters `failed`/`dead` via the normal retry
+machinery; the monitor alerts once on a form's first entry into `failed` since
+its last healthy delivery, once if it reaches `dead`, and sends a recovery
+notice when a later delivery for that form succeeds. The dashboard and the
+Status tab show each form's last real delivery outcome. No repeat alerts.
+
+Wire it to cron on cPanel, hourly, alongside `mail:retry`:
 
 ```
 0 * * * * /usr/local/bin/php /home/USER/osf-php/bin/osf monitor:run --quiet
 ```
 
-**Hourly is the recommended default.** The cron schedule is the knob: a
+**Hourly is the recommended default.** The cron schedule is the only knob: a
 lower-powered shared host can run `monitor:run` less often (say every few
-hours) with no config change - the canary is checked each run and every other
-form at most once per `MONITOR_FORM_INTERVAL_HOURS`, staggered, so a longer
-cron interval simply spaces things out further. Each run is also bounded by
-`MONITOR_TIME_BUDGET_SECONDS` (default 45): the canary always runs, then once
-the budget is spent any remaining forms defer to the next run rather than
-dragging the job out (a deferral is not a failure).
+hours) with no config change - each run does one canary check plus a passive
+sweep, so a longer interval simply checks less often. There is no per-form
+scheduling to tune.
 
-The `--quiet` flag keeps cron silent unless a check failed, an alert was sent
-or an alert could not be sent - because cPanel emails any cron output, that
-turns the hourly job into a free failure-alert channel instead of hourly noise.
+The `--quiet` flag keeps cron silent unless the canary failed, an alert was
+sent or an alert could not be sent - because cPanel emails any cron output,
+that turns the hourly job into a free failure-alert channel instead of hourly
+noise.
 
-`php bin/osf monitor:status` prints each form's last check, result and next due
-time. The base URL, secret, retention, interval, send timeout, time budget and
-alert recipient are all configurable via `MONITOR_*` settings (env or config
-file); the secret is generated and written back automatically on first run.
+`php bin/osf monitor:status` prints the canary's last run/result and each active
+form's last real delivery outcome. The base URL, secret, retention, canary
+form, send timeout and alert recipient are all configurable via `MONITOR_*`
+settings (env or config file); the secret is generated and written back
+automatically on first run.
 
 ## Cloudflare Turnstile (optional, per form)
 
@@ -673,23 +686,21 @@ hourly schedule meant hourly mail. The fix is the `--quiet` flag on both cron
 commands (`monitor:run --quiet` and `mail:retry --quiet`); the installer's
 *Scheduled tasks* step and the admin *Email* tab now emit them with it already
 added. Quiet runs print nothing when there is nothing to report, so you only
-get an email when something needs attention: a monitor check failed, an alert
+get an email when something needs attention: the canary failed, an alert
 was sent (or couldn't be), or the retry sweep actually re-sent something. If you
 set up cron before this change, re-copy the commands from the *Email* tab.
 
-**Host resource warnings?** The hourly `monitor:run` is the heavier of the two
-jobs - it drives a real submission through the full pipeline (token fetch, a
-short min-submit-time wait, POST, and delivery) for each form it checks. A few
-things keep its cost bounded: delivery is synchronous, so a probe is usually
-confirmed `sent` the instant its POST returns (`MONITOR_SEND_TIMEOUT_SECONDS`
-defaults to 10 and is only a short grace window); and `MONITOR_TIME_BUDGET_SECONDS`
-(default 45) stops the run from *starting* new form checks once that much wall
-time is spent - the canary always runs, the rest defer to the next run. If your
-host still flags the job, run it less often: hourly is only the recommended
-default, and a schedule of every few hours works fine because non-canary forms
-are already checked at most once per `MONITOR_FORM_INTERVAL_HOURS`, staggered.
-The non-quiet `monitor:run` ends with a one-line `runtime:` summary (elapsed
-seconds, checks run/deferred) if you want to measure a run on your host.
+**Host resource warnings?** The hourly `monitor:run` drives exactly one real
+submission through the full pipeline (token fetch, a short min-submit-time wait,
+POST, and delivery) - the dark canary - plus a cheap passive sweep that just
+reads each form's last real delivery outcome. Its cost is bounded: there is only
+ever one synthetic submission per run (not one per form), and delivery is
+synchronous, so the probe is usually confirmed `sent` the instant its POST
+returns (`MONITOR_SEND_TIMEOUT_SECONDS` defaults to 10 and is only a short grace
+window). If your host still flags the job, run it less often: hourly is only the
+recommended default, and every few hours works fine. The non-quiet `monitor:run`
+ends with a one-line `runtime:` summary (elapsed seconds) if you want to measure
+a run on your host.
 
 ## License
 MIT - see LICENSE.

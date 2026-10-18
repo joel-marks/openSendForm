@@ -6,11 +6,13 @@ namespace OpenSendForm\Admin;
 
 use OpenSendForm\Clock\Clock;
 use OpenSendForm\Config;
+use OpenSendForm\Form\FormRepository;
 use OpenSendForm\Install\Requirements;
 use OpenSendForm\Mail\DeliverabilityChecker;
 use OpenSendForm\Monitor\MonitorRepository;
 use OpenSendForm\Storage\Database;
 use OpenSendForm\Storage\MigrationRunner;
+use OpenSendForm\Submission\SubmissionRepository;
 use OpenSendForm\Version;
 
 /**
@@ -46,6 +48,8 @@ final class StatusReport
         private DeliverabilityChecker $checker,
         private array $admin,
         private array $appDirs,
+        private FormRepository $forms,
+        private SubmissionRepository $submissions,
         private string $dkimSelector = 'default'
     ) {
     }
@@ -150,7 +154,9 @@ final class StatusReport
     private function operations(): array
     {
         $applied = $this->migrations->appliedVersions();
-        $latest = $this->monitor->latest();
+        // "Last run" is the dark canary heartbeat (migration 012 kind='canary'):
+        // it writes one row every run, so it tracks the cron's liveness.
+        $latest = $this->monitor->latest(MonitorRepository::KIND_CANARY);
         $lastRunAt = $latest === null ? null : (string) $latest['checked_at'];
 
         return [
@@ -163,9 +169,43 @@ final class StatusReport
                 'ok'          => $latest === null ? null : ((int) $latest['ok'] === 1),
                 'detail'      => $latest === null ? null : ($latest['detail'] === null ? null : (string) $latest['detail']),
                 'stale'       => $latest !== null && self::monitorStale($lastRunAt, $this->clock->now()),
+                'forms'       => $this->formDeliveryOutcomes(),
             ],
             'cron_setup'         => $this->config->cronSetup(),
         ];
+    }
+
+    /**
+     * Each active form's last REAL delivery outcome (sent/failed/dead), or null
+     * when the form has had no real delivery activity yet. This is the passive
+     * per-form coverage the dark-canary model relies on, shown on the Status
+     * page so an operator sees every form, not just the canary.
+     *
+     * @return array<int, array{form_name:string, outcome:?string, at:?string}>
+     */
+    private function formDeliveryOutcomes(): array
+    {
+        $rows = [];
+        foreach ($this->forms->listForms() as $form) {
+            if ((int) $form['is_active'] !== 1) {
+                continue;
+            }
+            $id = (int) $form['id'];
+            $outcome = $this->submissions->latestRealDeliveryOutcomeForForm($id);
+            $at = $outcome === null
+                ? null
+                : ((string) ($outcome['last_attempt_at'] ?? '') !== ''
+                    ? (string) $outcome['last_attempt_at']
+                    : (string) ($outcome['created_at'] ?? ''));
+
+            $rows[] = [
+                'form_name' => (string) $form['name'],
+                'outcome'   => $outcome === null ? null : (string) $outcome['status'],
+                'at'        => $at,
+            ];
+        }
+
+        return $rows;
     }
 
     // --- Pure, directly-testable logic ------------------------------------

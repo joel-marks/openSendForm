@@ -573,14 +573,16 @@ td .osf-actions,
 
 /* The standard top-of-step "Skip" control: right-aligned, directly under the
    step title, for every skippable step except the last (Bot protection),
-   whose skip stays in the bottom action row next to the primary button. */
+   whose skip stays in the bottom action row next to the primary button. The
+   control is a real secondary button (same component as Continue, neutral
+   variant so the primary stays the only accent-filled button on the step). */
 .osf-step-skip-top {
     display: flex;
     justify-content: flex-end;
     margin: 0 0 var(--osf-space-4);
 }
 
-.osf-step-skip-top .osf-link-button {
+.osf-step-skip-top button {
     margin: 0;
 }
 

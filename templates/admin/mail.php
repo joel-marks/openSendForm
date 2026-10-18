@@ -125,7 +125,8 @@ use function OpenSendForm\Admin\icon;
     <p><small>Both commands end in <code>--quiet</code>: cPanel emails whatever a
         cron job prints, so a quiet run that finds nothing wrong prints nothing
         and sends no mail - an email from one of these jobs means something needs
-        attention.</small></p>
+        attention. Monitoring is zero-noise: it sends nothing while your forms
+        are healthy, and never emails the people who submit them.</small></p>
 
     <h3>Job 1 - monitoring</h3>
     <p class="osf-copy">

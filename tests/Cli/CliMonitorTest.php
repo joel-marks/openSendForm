@@ -66,7 +66,7 @@ final class CliMonitorTest extends TestCase
         self::assertStringContainsString('Generated MONITOR_SECRET', $result['stdout']);
         // Plain-language empty-state verdict + machine-parsable detail line.
         self::assertStringContainsString('No forms yet', $result['stdout']);
-        self::assertStringContainsString('checked 0 form(s)', $result['stdout']);
+        self::assertStringContainsString('canary not run (no active forms)', $result['stdout']);
 
         // The secret was written back to the config file.
         $written = require $this->configPath;

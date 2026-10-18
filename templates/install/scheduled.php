@@ -20,7 +20,7 @@ use function OpenSendForm\Admin\icon;
 
 <div class="osf-step-skip-top">
     <button type="submit" name="action" value="later" form="scheduled-step-form"
-            class="osf-link-button">Skip</button>
+            class="secondary">Skip</button>
 </div>
 
 <p>
@@ -30,7 +30,8 @@ use function OpenSendForm\Admin\icon;
 
 <ul>
     <li><strong>Monitoring</strong> - checks every hour that your forms still
-        work and emails you if one stops.</li>
+        work, and emails you only if something breaks. When everything is
+        healthy it sends nothing at all.</li>
     <li><strong>Retry failed emails</strong> - re-sends, once an hour, any
         submission emails that failed the first time (for example if your mail
         server was briefly unreachable).</li>
@@ -39,12 +40,13 @@ use function OpenSendForm\Admin\icon;
 <div class="osf-flash osf-flash--info" role="status">
     <p>The commands below end in <code>--quiet</code>. cPanel emails you
         whatever a cron job prints, so a quiet run that finds nothing wrong
-        prints nothing and you get no mail - an email from one of these jobs
-        then means something actually needs your attention.</p>
+        prints nothing and you get no mail - an email from the monitoring job
+        then means something actually needs your attention now. The monitoring
+        check never emails the people who submit your forms.</p>
     <p><strong>Hourly</strong> is the recommended schedule. On a lower-powered
         shared host you can run the monitoring job less often (say every few
-        hours) by choosing a different schedule in the next step; it still
-        spaces its per-form checks out on its own.</p>
+        hours) by choosing a different schedule in the next step; each run does
+        a single quick check, so there is nothing per-form to tune.</p>
 </div>
 
 <?php if (($error ?? '') !== ''): ?>

@@ -14,30 +14,42 @@ use OpenSendForm\Submission\SubmissionRepository;
 use Throwable;
 
 /**
- * Synthetic monitoring: scheduled fake-but-real submissions that exercise the
- * FULL public pipeline end to end, plus alerting.
+ * Zero-noise synthetic monitoring. Core doctrine: a HEALTHY system sends ZERO
+ * email to anyone, ever. The only monitor-origin mail a human receives is an
+ * alert (or its recovery notice) to MONITOR_ALERT_EMAIL - and that always means
+ * "act now".
  *
- * Each check is a REAL submission through the public HTTP endpoints — fetch the
- * form token, respect the min-submit-time bot check, POST marked content — so
- * it passes every stage a real user passes. The stored row is flagged synthetic
- * by the pipeline (reserved _osf_monitor field + MONITOR_SECRET); the monitor
- * then polls that row until it reaches 'sent'. A check FAILS if any step errors
- * or the submission is not delivered within the send timeout.
+ * A run has two parts:
  *
- * State lives entirely in monitor_checks: which forms are due, whether a form
- * is currently failing (for ok<->fail alert transitions and the dashboard
- * banner) and when it was last seen. The run also auto-purges expired synthetic
- * submissions.
+ *  1. THE DARK CANARY. One active form is exercised end to end against the
+ *     REAL public HTTP endpoints (fetch token -> respect min-submit-time ->
+ *     POST a marked submission -> store -> SMTP delivery). The SMTP transaction
+ *     genuinely happens - that is the proof the pipeline works - but the probe
+ *     is DARK: DeliveryService addresses a synthetic submission to the
+ *     service's own From/send address, so the accepted message lands in the
+ *     service mailbox and reaches no human. The stored row is flagged synthetic
+ *     and auto-purged after a short retention. The canary records ok/fail in
+ *     monitor_checks and alerts on each ok<->fail transition.
+ *
+ *  2. PASSIVE PER-FORM OBSERVATION. Real traffic already drives the delivery
+ *     state machine (received -> failed -> dead, or -> sent). For each active
+ *     form the run reads its last REAL delivery outcome and, on a transition of
+ *     that outcome, records it (monitor_checks, kind 'form') and sends ONE
+ *     alert: on the first entry into 'failed' since the last healthy delivery,
+ *     one on 'dead', and a recovery notice when a later delivery succeeds. No
+ *     synthetic traffic is generated for this - it is pure observation.
+ *
+ * All state lives in monitor_checks; nothing is kept in memory between runs.
  */
 final class MonitorService
 {
-    /** The body/subject marker so recipients can recognise and filter probes. */
+    /** The body/subject marker so the service mailbox can recognise probes. */
     public const MARKER = '[openSendForm monitor]';
 
     /**
      * Seconds added to the configured min-submit-time before a probe POSTs, so
      * the token ages just past the pipeline's bot check and no further. Small
-     * and derived from config — the probe never sleeps a fixed worst case.
+     * and derived from config - the probe never sleeps a fixed worst case.
      */
     private const MIN_SUBMIT_MARGIN_SECONDS = 1;
 
@@ -66,23 +78,22 @@ final class MonitorService
 
     /**
      * Run one monitoring pass: ensure the secret, purge expired synthetics,
-     * check the due forms (canary always + staggered others), record each
-     * result and send one alert on any ok<->fail transition.
-     *
-     * The canary is always checked first; once MONITOR_TIME_BUDGET_SECONDS of
-     * wall time has elapsed the run stops STARTING new (non-canary) checks and
-     * defers the rest to the next run. Deferral is not a failure.
+     * run the dark canary (and alert on its ok<->fail transition), then observe
+     * every active form's real delivery outcome passively (and alert on its
+     * transitions). Returns a summary; sends email ONLY on a transition.
      *
      * @return array{
      *   secret_generated: bool,
      *   purged: int,
-     *   checks_ran: int,
-     *   failures: int,
+     *   canary_ran: bool,
+     *   canary_ok: ?bool,
+     *   canary_detail: ?string,
+     *   canary_form: ?string,
+     *   passive_transitions: int,
      *   alerts_sent: int,
      *   alert_error: ?string,
-     *   deferred: int,
      *   elapsed_seconds: int,
-     *   results: array<int, array{form_id:int, form_name:string, ok:bool, detail:string}>
+     *   results: array<int, array{scope:string, form_id:int, form_name:string, ok:bool, detail:string}>
      * }
      */
     public function run(): array
@@ -95,107 +106,125 @@ final class MonitorService
 
         $active = $this->activeForms();
         $canaryId = $this->resolveCanaryId($active);
-        $formIds = MonitorSchedule::due(
-            $active,
-            $canaryId,
-            $this->checks->lastCheckedAtByForm(),
-            $this->config->monitorFormIntervalHours(),
-            $this->clock->now()
-        );
-
-        $budget = $this->config->monitorTimeBudgetSeconds();
 
         $results = [];
-        $failures = 0;
         $alertsSent = 0;
         $alertError = null;
-        $deferred = 0;
 
-        foreach ($formIds as $index => $formId) {
-            // The canary (always first) runs unconditionally; every other form
-            // defers once the time budget is spent. Remaining forms are not
-            // failures — they are simply left for the next run.
-            if ($index > 0 && ($this->clock->now() - $startedAt) >= $budget) {
-                $deferred = count($formIds) - $index;
-                break;
-            }
+        // --- 1. The dark canary ------------------------------------------
+        $canaryRan = false;
+        $canaryOk = null;
+        $canaryDetail = null;
+        $canaryForm = null;
 
-            $form = $this->forms->findById($formId);
-            if ($form === null || (int) $form['is_active'] !== 1) {
-                continue; // deactivated/deleted between planning and checking
-            }
+        $canaryFormRow = $canaryId === null ? null : $this->forms->findById($canaryId);
+        if ($canaryFormRow !== null && (int) $canaryFormRow['is_active'] === 1) {
+            $canaryRan = true;
+            $canaryForm = (string) $canaryFormRow['name'];
 
-            $previous = $this->checks->lastResultForForm($formId);
-            $check = $this->performCheck($form, $secret);
+            $previous = $this->checks->lastResultForForm($canaryId, MonitorRepository::KIND_CANARY);
+            $check = $this->performCheck($canaryFormRow, $secret);
+            $canaryOk = $check['ok'];
+            $canaryDetail = $check['detail'];
+
             $checkedAt = gmdate('Y-m-d H:i:s', $this->clock->now());
-            $this->checks->record($formId, $checkedAt, $check['ok'], $check['detail']);
+            $this->checks->record($canaryId, $checkedAt, $check['ok'], $check['detail'], MonitorRepository::KIND_CANARY);
 
-            if (!$check['ok']) {
-                $failures++;
+            $event = $this->canaryTransition($previous, $check['ok']);
+            if ($event !== null) {
+                $this->tallyAlert($this->trySend($canaryFormRow, $checkedAt, $check['detail'], $event), $alertsSent, $alertError);
             }
 
-            $alert = $this->maybeAlert($form, $previous, $check, $checkedAt);
-            if ($alert === true) {
-                $alertsSent++;
-            } elseif (is_string($alert) && $alertError === null) {
-                $alertError = $alert; // first alert-send failure wins; cron is the backstop
+            $results[] = $this->resultRow('canary', $canaryId, $canaryForm, $check['ok'], $check['detail']);
+        }
+
+        // --- 2. Passive per-form observation -----------------------------
+        $passiveTransitions = 0;
+        foreach ($active as $form) {
+            $formId = (int) $form['id'];
+            $outcome = $this->submissions->latestRealDeliveryOutcomeForForm($formId);
+            if ($outcome === null) {
+                continue; // no real delivery activity yet - nothing to observe
             }
 
-            $results[] = [
-                'form_id'   => $formId,
-                'form_name' => (string) $form['name'],
-                'ok'        => $check['ok'],
-                'detail'    => $check['detail'],
-            ];
+            $current = self::stateFromStatus((string) $outcome['status']);
+            $previous = $this->checks->lastPassiveState($formId);
+            if ($current === $previous) {
+                continue; // no transition since the last run
+            }
+
+            $passiveTransitions++;
+            $checkedAt = gmdate('Y-m-d H:i:s', $this->clock->now());
+            $detail = $this->passiveDetail($current, $outcome);
+            // detail column stores the state WORD so the next run reads it back.
+            $this->checks->record($formId, $checkedAt, $current === 'ok', $current, MonitorRepository::KIND_FORM);
+
+            $event = match ($current) {
+                'failed' => 'failing',
+                'dead'   => 'dead',
+                default  => 'recovered',
+            };
+            $this->tallyAlert($this->trySend($form, $checkedAt, $detail, $event), $alertsSent, $alertError);
+
+            $results[] = $this->resultRow('form', $formId, (string) $form['name'], $current === 'ok', $event . ': ' . $detail);
         }
 
         return [
-            'secret_generated' => $secretGenerated,
-            'purged'           => $purged,
-            'checks_ran'       => count($results),
-            'failures'         => $failures,
-            'alerts_sent'      => $alertsSent,
-            'alert_error'      => $alertError,
-            'deferred'         => $deferred,
-            'elapsed_seconds'  => $this->clock->now() - $startedAt,
-            'results'          => $results,
+            'secret_generated'    => $secretGenerated,
+            'purged'              => $purged,
+            'canary_ran'          => $canaryRan,
+            'canary_ok'           => $canaryOk,
+            'canary_detail'       => $canaryDetail,
+            'canary_form'         => $canaryForm,
+            'passive_transitions' => $passiveTransitions,
+            'alerts_sent'         => $alertsSent,
+            'alert_error'         => $alertError,
+            'elapsed_seconds'     => $this->clock->now() - $startedAt,
+            'results'             => $results,
         ];
     }
 
     /**
-     * Per-form status for `monitor:status`: last check, result and next due.
+     * Read-only status for `monitor:status` and the Status tab: the canary's
+     * last run/result and each active form's last REAL delivery outcome. There
+     * is no "next due" - checks are not scheduled per form any more.
      *
-     * @return array<int, array{
-     *   form_id:int, form_name:string, is_canary:bool,
-     *   last_checked_at:?string, last_ok:?bool, next_due:string
-     * }>
+     * @return array{
+     *   canary: ?array{form_id:int, form_name:string, last_run_at:?string, last_ok:?bool, detail:?string},
+     *   forms: array<int, array{form_id:int, form_name:string, is_canary:bool, outcome:?string, at:?string}>
+     * }
      */
     public function status(): array
     {
         $active = $this->activeForms();
         $canaryId = $this->resolveCanaryId($active);
-        $interval = $this->config->monitorFormIntervalHours();
-        $now = $this->clock->now();
 
-        $rows = [];
-        foreach ($active as $form) {
-            $id = (int) $form['id'];
-            $latest = $this->checks->latestForForm($id);
-            $lastCheckedAt = $latest === null ? null : (string) $latest['checked_at'];
-            $lastOk = $latest === null ? null : ((int) $latest['ok'] === 1);
-            $isCanary = ($id === $canaryId);
-
-            $rows[] = [
-                'form_id'         => $id,
-                'form_name'       => (string) $form['name'],
-                'is_canary'       => $isCanary,
-                'last_checked_at' => $lastCheckedAt,
-                'last_ok'         => $lastOk,
-                'next_due'        => $this->nextDue($isCanary, $lastCheckedAt, $interval, $now),
+        $canary = null;
+        if ($canaryId !== null) {
+            $row = $this->checks->latestForForm($canaryId, MonitorRepository::KIND_CANARY);
+            $canary = [
+                'form_id'     => $canaryId,
+                'form_name'   => $this->formName($active, $canaryId),
+                'last_run_at' => $row === null ? null : (string) $row['checked_at'],
+                'last_ok'     => $row === null ? null : ((int) $row['ok'] === 1),
+                'detail'      => $row === null ? null : ($row['detail'] === null ? null : (string) $row['detail']),
             ];
         }
 
-        return $rows;
+        $forms = [];
+        foreach ($active as $form) {
+            $id = (int) $form['id'];
+            $outcome = $this->submissions->latestRealDeliveryOutcomeForForm($id);
+            $forms[] = [
+                'form_id'   => $id,
+                'form_name' => (string) $form['name'],
+                'is_canary' => $id === $canaryId,
+                'outcome'   => $outcome === null ? null : (string) $outcome['status'],
+                'at'        => $outcome === null ? null : self::outcomeWhen($outcome),
+            ];
+        }
+
+        return ['canary' => $canary, 'forms' => $forms];
     }
 
     // --- Secret ------------------------------------------------------------
@@ -219,12 +248,14 @@ final class MonitorService
         return true;
     }
 
-    // --- One check ---------------------------------------------------------
+    // --- The canary check --------------------------------------------------
 
     /**
      * Perform one synthetic check for a form: token -> min-time -> POST ->
-     * poll for 'sent'. Never throws — every failure mode is caught and
-     * converted to a failed result with a human-readable detail.
+     * poll for 'sent'. Never throws - every failure mode is caught and
+     * converted to a failed result with a human-readable detail. The delivery
+     * it triggers is dark (DeliveryService routes synthetic submissions to the
+     * service's own address), so this never emails the form's real recipient.
      *
      * @param array<string, mixed> $form
      * @return array{ok:bool, detail:string}
@@ -272,7 +303,8 @@ final class MonitorService
             \OpenSendForm\Submit\SubmitContext::FIELD_MONITOR => $secret,
             'email'   => (string) $form['recipient_email'],
             'message' => self::MARKER . ' Synthetic end-to-end delivery check at '
-                . gmdate('Y-m-d H:i:s', $this->clock->now()) . ' UTC. Automated; safe to ignore.',
+                . gmdate('Y-m-d H:i:s', $this->clock->now()) . ' UTC. Delivered to the service '
+                . 'mailbox only; no recipient is contacted. Automated; safe to ignore.',
         ];
 
         try {
@@ -311,7 +343,7 @@ final class MonitorService
      * Poll a stored submission until it reaches 'sent' or the send timeout
      * elapses. Delivery is synchronous-first, so the row is usually already
      * 'sent' on the first (immediate) read; the short re-checks that follow
-     * only cover the degenerate case where the row is still 'received' — which
+     * only cover the degenerate case where the row is still 'received' - which
      * at timeout is an honest failure (delivery did not happen in-request).
      *
      * @return array{ok:bool, detail:string}
@@ -344,59 +376,97 @@ final class MonitorService
         ));
     }
 
-    // --- Alerting ----------------------------------------------------------
+    // --- Transitions -------------------------------------------------------
 
     /**
-     * Send at most one alert on an ok<->fail transition. Returns true when an
-     * alert (or recovery) email was sent, a string with the error when a
-     * needed email could not be sent, or null when no transition occurred.
+     * The canary's ok<->fail transition, or null when nothing changed. A form
+     * with no prior canary state is treated as previously ok: a first-ever
+     * failing check alerts, a first-ever passing check is silent.
      *
-     * A form with no prior state is treated as previously ok: a first-ever
-     * failing check alerts (so the operator hears about it), a first-ever
-     * passing check is silent.
-     *
-     * @param array<string, mixed> $form
-     * @param array{ok:bool, detail:string} $check
-     * @return bool|string|null True when an email was sent, a string error when
-     *                          a needed email could not be sent, null otherwise.
+     * @return 'failing'|'recovered'|null
      */
-    private function maybeAlert(array $form, ?bool $previous, array $check, string $checkedAt): bool|string|null
+    private function canaryTransition(?bool $previous, bool $ok): ?string
     {
         $wasOk = $previous ?? true;
-
-        if ($wasOk && !$check['ok']) {
-            return $this->trySend($form, $checkedAt, $check['detail'], true);
+        if ($wasOk && !$ok) {
+            return 'failing';
         }
-
-        if ($previous === false && $check['ok']) {
-            return $this->trySend($form, $checkedAt, $check['detail'], false);
+        if ($previous === false && $ok) {
+            return 'recovered';
         }
 
         return null;
     }
 
     /**
-     * @param array<string, mixed> $form
-     * @return bool|string True when the email was sent, else the error string.
+     * Map a delivery status to a passive per-form state word.
      */
-    private function trySend(array $form, string $checkedAt, string $detail, bool $failing): bool|string
+    private static function stateFromStatus(string $status): string
     {
-        try {
-            $this->sendAlert($form, $checkedAt, $detail, $failing);
+        return match ($status) {
+            'failed' => 'failed',
+            'dead'   => 'dead',
+            default  => 'ok', // 'sent'
+        };
+    }
 
-            return true;
-        } catch (Throwable $e) {
-            return 'could not send ' . ($failing ? 'alert' : 'recovery')
-                . ' email for form "' . (string) $form['name'] . '": ' . $e->getMessage();
+    /**
+     * A human sentence for a passive transition, shown in run output.
+     *
+     * @param array<string, mixed> $outcome
+     */
+    private function passiveDetail(string $state, array $outcome): string
+    {
+        $when = self::outcomeWhen($outcome);
+        $suffix = $when === '' ? '' : ' (' . $when . ' UTC)';
+
+        return match ($state) {
+            'failed' => 'a real submission failed to deliver and is being retried' . $suffix,
+            'dead'   => 'a real submission could not be delivered after every retry' . $suffix,
+            default  => 'real submissions are delivering again' . $suffix,
+        };
+    }
+
+    // --- Alerting ----------------------------------------------------------
+
+    /**
+     * Fold one trySend() result into the running alert tallies.
+     */
+    private function tallyAlert(bool|string $result, int &$alertsSent, ?string &$alertError): void
+    {
+        if ($result === true) {
+            $alertsSent++;
+        } elseif (is_string($result) && $alertError === null) {
+            $alertError = $result; // first alert-send failure wins; cron is the backstop
         }
     }
 
     /**
      * @param array<string, mixed> $form
+     * @param 'failing'|'dead'|'recovered' $event
+     * @return bool|string True when the email was sent, else the error string.
+     */
+    private function trySend(array $form, string $checkedAt, string $detail, string $event): bool|string
+    {
+        try {
+            $this->sendAlert($form, $checkedAt, $detail, $event);
+
+            return true;
+        } catch (Throwable $e) {
+            $label = $event === 'recovered' ? 'recovery' : 'alert';
+
+            return 'could not send ' . $label . ' email for form "'
+                . (string) $form['name'] . '": ' . $e->getMessage();
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $form
+     * @param 'failing'|'dead'|'recovered' $event
      *
      * @throws \RuntimeException when there is no recipient, or the mailer throws.
      */
-    private function sendAlert(array $form, string $checkedAt, string $detail, bool $failing): void
+    private function sendAlert(array $form, string $checkedAt, string $detail, string $event): void
     {
         $to = $this->alertRecipient();
         if ($to === '') {
@@ -404,30 +474,41 @@ final class MonitorService
         }
 
         $name = $this->collapse((string) $form['name']);
-        $state = $failing ? 'FAILURE' : 'RECOVERED';
-        $subject = self::MARKER . ' ' . $state . ': ' . $name;
 
-        if ($failing) {
-            $body = "Synthetic monitoring detected a problem with a form.\n\n"
-                . 'Form:   ' . $name . ' (#' . (int) $form['id'] . ")\n"
-                . 'Time:   ' . $checkedAt . " UTC\n"
-                . 'Detail: ' . $detail . "\n\n"
-                . "Visitors may be unable to submit this form, or their submissions may not be\n"
-                . "reaching you. This is an automated alert from openSendForm synthetic monitoring.";
-        } else {
-            $body = "A form that was previously failing is working again.\n\n"
-                . 'Form:   ' . $name . ' (#' . (int) $form['id'] . ")\n"
-                . 'Time:   ' . $checkedAt . " UTC\n"
-                . 'Detail: ' . $detail . "\n\n"
-                . "This is an automated recovery notice from openSendForm synthetic monitoring.";
-        }
+        [$state, $lead, $tail] = match ($event) {
+            'failing' => [
+                'FAILURE',
+                'openSendForm detected a problem with a form.',
+                "Visitors may be unable to submit this form, or their submissions may not be\n"
+                    . 'reaching you. This is an automated alert from openSendForm monitoring.',
+            ],
+            'dead' => [
+                'UNDELIVERABLE',
+                'openSendForm gave up delivering a real submission for a form.',
+                "The submission could not be delivered after every retry. It is kept so you can\n"
+                    . 'recover it, but this needs your attention now. This is an automated alert '
+                    . 'from openSendForm monitoring.',
+            ],
+            'recovered' => [
+                'RECOVERED',
+                'A form that was previously failing is working again.',
+                'No action needed; this is the all-clear from openSendForm monitoring.',
+            ],
+        };
+
+        $subject = self::MARKER . ' ' . $state . ': ' . $name;
+        $body = $lead . "\n\n"
+            . 'Form:   ' . $name . ' (#' . (int) $form['id'] . ")\n"
+            . 'Time:   ' . $checkedAt . " UTC\n"
+            . 'Detail: ' . $detail . "\n\n"
+            . $tail;
 
         $this->mailer->send($to, null, $subject, $body);
     }
 
     /**
      * The alert recipient: the configured MONITOR_ALERT_EMAIL, else the first
-     * admin's email, else '' (no recipient — sendAlert then throws).
+     * admin's email, else '' (no recipient - sendAlert then throws).
      */
     private function alertRecipient(): string
     {
@@ -481,25 +562,49 @@ final class MonitorService
     }
 
     /**
-     * A human "next due" description for the status command.
+     * The name of an active form by id, or '' when not present.
+     *
+     * @param array<int, array<string, mixed>> $active
      */
-    private function nextDue(bool $isCanary, ?string $lastCheckedAt, int $intervalHours, int $now): string
+    private function formName(array $active, int $id): string
     {
-        if ($isCanary) {
-            return 'every run';
-        }
-        if ($lastCheckedAt === null) {
-            return 'due now (first check)';
-        }
-
-        $checkedUnix = strtotime($lastCheckedAt . ' UTC');
-        if ($checkedUnix === false) {
-            return 'due now';
+        foreach ($active as $form) {
+            if ((int) $form['id'] === $id) {
+                return (string) $form['name'];
+            }
         }
 
-        $dueUnix = $checkedUnix + ($intervalHours * 3600);
+        return '';
+    }
 
-        return $dueUnix <= $now ? 'due now' : gmdate('Y-m-d H:i:s', $dueUnix) . ' UTC';
+    /**
+     * The best timestamp to describe a delivery outcome: the last attempt time,
+     * falling back to creation time.
+     *
+     * @param array<string, mixed> $outcome
+     */
+    private static function outcomeWhen(array $outcome): string
+    {
+        $at = (string) ($outcome['last_attempt_at'] ?? '');
+        if ($at !== '') {
+            return $at;
+        }
+
+        return (string) ($outcome['created_at'] ?? '');
+    }
+
+    /**
+     * @return array{scope:string, form_id:int, form_name:string, ok:bool, detail:string}
+     */
+    private function resultRow(string $scope, int $formId, string $formName, bool $ok, string $detail): array
+    {
+        return [
+            'scope'     => $scope,
+            'form_id'   => $formId,
+            'form_name' => $formName,
+            'ok'        => $ok,
+            'detail'    => $detail,
+        ];
     }
 
     /**

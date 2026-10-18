@@ -91,18 +91,20 @@ final class AutoMigrationDoctrineTest extends TestCase
         try {
             $db = Database::connect('sqlite:' . $dbPath);
             $this->migrateUpToVersion($db, 10);
-            self::assertSame(10, $this->schemaVersion($db), 'fixture starts one version behind');
+            self::assertSame(10, $this->schemaVersion($db), 'fixture starts two versions behind');
             unset($db);
 
             // A plain, non-migrate command booting against the stale database.
             $result = $this->osf(['form:list'], $dbPath);
             self::assertSame(0, $result['code'], $result['stderr']);
 
-            // Booting applied the pending migration: the schema is now current.
+            // Booting applied the pending migrations: the schema is now current.
             $after = Database::connect('sqlite:' . $dbPath);
-            self::assertSame(11, $this->schemaVersion($after), 'CLI boot must auto-migrate');
+            self::assertSame(12, $this->schemaVersion($after), 'CLI boot must auto-migrate');
             $columns = array_column($after->fetchAll('PRAGMA table_info(admins)'), 'name');
             self::assertContains('totp_last_timestep', $columns, 'migration 011 ran at CLI boot');
+            $monitorColumns = array_column($after->fetchAll('PRAGMA table_info(monitor_checks)'), 'name');
+            self::assertContains('kind', $monitorColumns, 'migration 012 ran at CLI boot');
         } finally {
             @unlink($dbPath);
         }

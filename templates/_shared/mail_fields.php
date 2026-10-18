@@ -22,9 +22,22 @@ use OpenSendForm\Mail\MailSettingsForm;
  * @var string $fromAddress
  * @var string $fromName
  * @var bool   $passwordError Re-render after a failed save (password cleared).
+ * @var bool   $mailpitPrefill Show the dev-only "fill with Mailpit settings"
+ *                             link (non-production only; never set in prod).
  */
 $passwordError = $passwordError ?? false;
+$mailpitPrefill = $mailpitPrefill ?? false;
 ?>
+<?php if ($mailpitPrefill): ?>
+    <p class="osf-field osf-mailpit-prefill">
+        <a href="#" data-mailpit-prefill>Fill with local test settings (Mailpit)</a>
+        <a href="https://opensendform.com/guides/local-testing" target="_blank" rel="noopener"
+           class="osf-help-link" aria-label="About local testing (opens in a new tab)"
+           title="About local testing">?</a>
+        <br><small>Dev only. Sets host <code>mailpit</code>, port <code>1025</code>,
+            no encryption, no login and a test From address — all still editable.</small>
+    </p>
+<?php endif; ?>
 <div class="osf-field">
     <label for="smtp_user">Username</label>
     <input type="text" id="smtp_user" name="smtp_user" value="<?= h($smtpUser) ?>"

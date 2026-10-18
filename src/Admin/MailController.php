@@ -104,6 +104,12 @@ final class MailController
         if ($enabled && $host === '') {
             return self::invalid($c, $response, $data, 'Enter your SMTP host before turning email sending on.');
         }
+        // SMTP auth is optional (localhost relays and Mailpit send without a
+        // login). An empty username means "no auth". A password with no username
+        // cannot be used, so reject that combination plainly.
+        if ($user === '' && $passwordInput !== '') {
+            return self::invalid($c, $response, $data, 'Enter a username to use with that password — or leave both the username and password blank if your server sends without a login.');
+        }
 
         $changes = [
             'SMTP_HOST'         => $host,
@@ -312,6 +318,8 @@ final class MailController
             'fromAddress'    => $fromAddress,
             'fromName'       => $useSubmitted ? (string) ($data['mail_from_name'] ?? '') : $config->mailFromName(),
             'mailEnabled'    => $useSubmitted ? isset($data['mail_enabled']) : $config->mailEnabled(),
+            // Dev convenience: a one-click Mailpit prefill link, never in prod.
+            'mailpitPrefill' => $config->appEnv() !== 'production',
             // Handoff / notices.
             'shadowed'       => self::shadowedSettings($config, $writer),
             'offerEnable'    => !$config->mailEnabled() && self::session($c)->get(self::S_CAN_ENABLE) === true,

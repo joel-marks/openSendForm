@@ -129,22 +129,28 @@ $yesNo = static fn (bool $v): string => $v ? 'Yes' : 'No';
     <?php endif; ?>
 
     <h3>Monitoring</h3>
+    <p><small>Monitoring is zero-noise: when everything is healthy it sends no
+        email at all. Any message from openSendForm monitoring means something
+        needs your attention now.</small></p>
+
+    <h4>Canary</h4>
     <?php if (!$mon['ever_run']): ?>
         <p>
             <span class="osf-badge osf-badge--warn">Heads up</span>
-            Synthetic monitoring has not run yet. It runs from the
-            <code>monitor:run</code> cron job.
+            The hourly canary has not run yet. It runs from the
+            <code>monitor:run</code> cron job and exercises the whole pipeline
+            without emailing anyone.
         </p>
     <?php else: ?>
         <?php if ($mon['stale']): ?>
             <div class="osf-flash osf-flash--error" role="alert">
-                <strong>Monitoring has not run recently.</strong> The newest check
-                is older than expected (it should run about hourly), so the cron
+                <strong>Monitoring has not run recently.</strong> The newest canary
+                run is older than expected (it should run about hourly), so the cron
                 job may have stopped. Check the <code>monitor:run</code> cron.
             </div>
         <?php endif; ?>
         <p>
-            <strong>Last run:</strong> <?= h((string) $mon['last_run_at']) ?> UTC
+            <strong>Last canary run:</strong> <?= h((string) $mon['last_run_at']) ?> UTC
             -
             <?php if ($mon['ok']): ?>
                 <span class="osf-badge osf-badge--ok">Passed</span>
@@ -155,6 +161,47 @@ $yesNo = static fn (bool $v): string => $v ? 'Yes' : 'No';
                 <br><small><?= h((string) $mon['detail']) ?></small>
             <?php endif; ?>
         </p>
+    <?php endif; ?>
+
+    <h4>Form delivery</h4>
+    <?php $forms = $mon['forms'] ?? []; ?>
+    <?php if ($forms === []): ?>
+        <p><small>No active forms to observe yet.</small></p>
+    <?php else: ?>
+        <p><small>The last real delivery outcome for each active form. This comes
+            from your real traffic - no test submissions are sent.</small></p>
+        <div class="osf-table-wrap">
+            <table class="osf-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Form</th>
+                        <th scope="col">Last delivery</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($forms as $f): ?>
+                    <?php
+                    $outcome = $f['outcome'] === null ? null : (string) $f['outcome'];
+                    [$oClass, $oLabel] = match ($outcome) {
+                        'sent'   => ['osf-badge--ok', 'Delivered'],
+                        'failed' => ['osf-badge--warn', 'Failed (retrying)'],
+                        'dead'   => ['osf-badge--danger', 'Undeliverable'],
+                        default  => ['osf-badge--muted', 'No real submissions yet'],
+                    };
+                    ?>
+                    <tr>
+                        <td data-label="Form"><?= h((string) $f['form_name']) ?></td>
+                        <td data-label="Last delivery">
+                            <span class="osf-badge <?= h($oClass) ?>"><?= h($oLabel) ?></span>
+                            <?php if ((string) ($f['at'] ?? '') !== ''): ?>
+                                <br><small><?= h((string) $f['at']) ?> UTC</small>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
     <?php endif; ?>
 
     <h3>Scheduled tasks</h3>

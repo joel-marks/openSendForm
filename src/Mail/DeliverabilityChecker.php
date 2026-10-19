@@ -145,18 +145,43 @@ final class DeliverabilityChecker
      */
     private function checkDmarc(string $domain): array
     {
-        $fqdn = $domain === '' ? '' : '_dmarc.' . $domain;
-        $found = $fqdn === '' ? null : $this->firstMatching($fqdn, '/^v=DMARC1\b/i');
+        $primaryFqdn = $domain === '' ? '' : '_dmarc.' . $domain;
+        $found = $primaryFqdn === '' ? null : $this->firstMatching($primaryFqdn, '/^v=DMARC1\b/i');
+        $foundOn = $primaryFqdn;
+        $note = '';
+
+        // RFC 7489 (section 6.6.3): when _dmarc.<from-domain> has no record, a
+        // receiver falls back to the record at the From domain's ORGANIZATIONAL
+        // domain. Outlook etc. honour this, so a subdomain From with DMARC only
+        // at its org domain really does pass - we must report it as present.
+        if ($found === null && $domain !== '') {
+            $org = self::organizationalDomain($domain);
+            if ($org !== '' && $org !== $domain) {
+                $orgFqdn = '_dmarc.' . $org;
+                $orgFound = $this->firstMatching($orgFqdn, '/^v=DMARC1\b/i');
+                if ($orgFound !== null) {
+                    $found = $orgFound;
+                    $foundOn = $orgFqdn;
+                    $note = 'No record at ' . $primaryFqdn . ', but one is published at the '
+                        . 'organizational domain (' . $orgFqdn . '); receivers use that as the '
+                        . 'fallback (RFC 7489), so DMARC applies to this domain.';
+                }
+            }
+        }
 
         return [
             'key'         => 'dmarc',
             'label'       => 'DMARC',
             'type'        => 'TXT',
             'name'        => '_dmarc',
-            'fqdn'        => $fqdn,
+            // fqdn names where the record was actually found (the org domain
+            // when it came from the fallback), so the readout is honest about
+            // which name carries it.
+            'fqdn'        => $found !== null ? $foundOn : $primaryFqdn,
             'state'       => $found !== null ? 'present' : 'absent',
             'ok'          => $found !== null,
             'found'       => $found,
+            'note'        => $note,
             'recommended' => self::recommendedDmarc($domain),
             'explain'     => 'DMARC tells receivers what to do with messages that fail SPF and '
                 . 'DKIM, and can email you a report; start in monitor-only mode (p=none).',
@@ -277,6 +302,48 @@ final class DeliverabilityChecker
         }
 
         return implode('.', array_slice($labels, -2));
+    }
+
+    /**
+     * A best-effort organizational (registrable) domain for DMARC's RFC 7489
+     * fallback: the registered name a receiver would look up when the exact
+     * From (sub)domain has no _dmarc record. For "app.opensendform.com" this is
+     * "opensendform.com"; for "mail.example.co.uk" it is "example.co.uk".
+     *
+     * This is a PRAGMATIC v1 heuristic, not a full Public Suffix List (we
+     * deliberately do not vendor a PSL dataset): take the last two labels,
+     * unless the domain sits under a known two-part registry suffix (co.uk,
+     * com.au, ...), in which case take three. Limits: an unlisted multi-level
+     * public suffix (a rarer ccTLD second level, or a long private suffix) will
+     * yield too-short a guess, so the fallback lookup would miss or mis-target;
+     * the common gTLD and major ccTLD cases are covered. A single-/two-label
+     * domain is already organizational and is returned unchanged.
+     */
+    public static function organizationalDomain(string $domain): string
+    {
+        $domain = rtrim(strtolower(trim($domain)), '.');
+        if ($domain === '') {
+            return '';
+        }
+
+        $labels = explode('.', $domain);
+        $count = count($labels);
+        if ($count <= 2) {
+            return $domain;
+        }
+
+        // Common second-level registry labels that sit directly under a 2-letter
+        // ccTLD (e.g. "co" in "co.uk", "com" in "com.au"). Conservative list.
+        static $secondLevel = [
+            'co', 'com', 'org', 'net', 'gov', 'edu', 'ac',
+            'or', 'ne', 'go', 'gob', 'gouv', 'sch', 'ltd', 'plc', 'me', 'nom', 'mil',
+        ];
+
+        $tld = $labels[$count - 1];
+        $sld = $labels[$count - 2];
+        $take = (strlen($tld) === 2 && in_array($sld, $secondLevel, true)) ? 3 : 2;
+
+        return implode('.', array_slice($labels, -$take));
     }
 
     private static function normaliseSelector(string $selector): string

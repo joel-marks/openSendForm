@@ -95,9 +95,18 @@ final class DeliveryService
         $attemptedAt = gmdate('Y-m-d H:i:s', $nowUnix);
         $attempts = (int) $submission['attempts'] + 1;
 
+        // The dark canary: a synthetic monitor probe genuinely runs the SMTP
+        // transaction (that is the proof the pipeline works), but it is
+        // addressed to the service's own From/send address, never the form's
+        // real recipient - so the accepted message lands in the service mailbox
+        // and reaches no human. Real submissions always go to the form owner.
+        $recipient = (int) ($submission['is_synthetic'] ?? 0) === 1
+            ? $this->config->mailFromAddress()
+            : (string) $form['recipient_email'];
+
         try {
             $this->mailer->send(
-                (string) $form['recipient_email'],
+                $recipient,
                 $message->replyTo(),
                 $message->subject(),
                 $message->textBody()

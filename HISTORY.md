@@ -2423,3 +2423,66 @@ and operator-approved.
 - **Deviations / notes:** none blocking; three interpretive judgment calls
   (help-glyph rendering, top-skip button style, content-width fix verification
   caveat) logged in QUESTIONS.md.
+
+## 2026-10-18 — Dark-canary monitoring redesign + DMARC fallback + skip button (fix/dark-canary-dmarc-skip)
+- Branch: fix/dark-canary-dmarc-skip (off main).
+- **Core doctrine change (architect-ratified): a HEALTHY system sends ZERO
+  email, to anyone, ever.** Every unsolicited message from openSendForm now
+  means "act now".
+- **Task 1 - dark-canary monitoring redesign.**
+  - ABOLISHED per-form scheduled delivery checks. `MonitorSchedule` and its test
+    deleted; `MONITOR_FORM_INTERVAL_HOURS` and `MONITOR_TIME_BUDGET_SECONDS`
+    (plus their Config getters, the stagger/defer logic, and the `deferred`/
+    `checks_ran`/`failures` run-summary fields) retired. Migration history kept
+    intact: `monitor_checks` stays.
+  - **Chosen dark-canary mechanism (stated per ruling):** the hourly canary
+    still runs ONE real submission through the FULL public pipeline (token ->
+    min-time -> POST -> store -> SMTP) against one active form, but
+    `DeliveryService` addresses a synthetic submission to the service's own
+    `MAIL_FROM_ADDRESS` instead of the form's recipient. The SMTP transaction
+    genuinely executes (the proof the pipeline works - nothing in the mail layer
+    is faked); the self-addressed message lands in the service mailbox and
+    reaches no human. The synthetic row is purged as before. Canary ok<->fail
+    single-alert machinery unchanged.
+  - **Passive per-form observation** replaces active per-form checks: each run
+    reads every active form's last REAL (non-synthetic) delivery outcome
+    (`SubmissionRepository::latestRealDeliveryOutcomeForForm`) and, on a
+    transition, alerts once - first entry into `failed`, once on `dead`, and a
+    recovery notice when a later delivery succeeds. State lives in
+    `monitor_checks` under a new `kind` column (migration 012: `canary` vs
+    `form`), detail carrying the passive state word. No synthetic noise.
+  - `MonitorRepository` is now kind-aware (`record`/`latest`/`latestForForm`/
+    `lastResultForForm` take a kind; added `lastPassiveState`); `failingForms`
+    now reflects passive `form` state (so the dashboard banner tracks real
+    delivery, not the canary, whose failure is alerted + shown on Status).
+  - Status tab + `monitor:status` reworked: canary last run/result + per-form
+    last real delivery outcome; no "next due". `StatusReport` gained a per-form
+    delivery-outcome section (now injects Form/Submission repositories).
+  - Alerts extended with an `UNDELIVERABLE` (dead) variant beside FAILURE/
+    RECOVERED; `MONITOR_ALERT_EMAIL` remains the ONLY monitor-origin email.
+  - Docs: README monitoring section rewritten (zero-noise, dark canary, passive
+    observation), troubleshooting updated; installer Scheduled-tasks step copy,
+    admin Email-tab cron copy and the shipped INSTALL.txt aligned.
+- **Task 2 - DMARC organizational-domain fallback (RFC 7489).** When
+  `_dmarc.<from-domain>` has no record, the checker now also looks up
+  `_dmarc.<organizational domain>` and reports the record as present, labelling
+  the name it was found on (new `note` field, rendered in the shared partial).
+  Pragmatic v1 heuristic (NO vendored PSL): last two labels, or three under a
+  known two-part suffix (co.uk, com.au, ...); limits noted in a code comment.
+  New `DeliverabilityChecker::organizationalDomain()`.
+- **Task 3 - stepper skip button.** The top-right installer "Skip" on the
+  Email-sending and Scheduled-tasks steps is now a real secondary button (same
+  component as Continue, primary stays accent-filled) instead of a text link;
+  placement and the Bot-protection "Skip and complete" bottom-row exception
+  unchanged. CSS `.osf-step-skip-top button` margin reset.
+- **Tests:** rewrote `MonitorServiceTest` for the new model (dark canary never
+  emails a form recipient; SMTP still genuinely exercised; passive failed/dead/
+  recovery transitions; synthetic rows ignored by passive; purge; status).
+  Added DMARC fallback + org-domain heuristic tests; a skip-button style lock;
+  a migration-012 column test. Updated migration-count expectations
+  (SchemaMigrationsTest, MigrationRunnerTest, AutoMigrationDoctrineTest,
+  DashboardStaleSchemaTest) and the dashboard banner test (passive kind).
+- **Test results:** full PHPUnit suite green - 689 tests, 4286 assertions.
+- **Deviations / notes:** retired two `MONITOR_*` config keys and deleted
+  `MonitorSchedule` (in scope: the redesign abolishes scheduling). Dark-canary
+  mechanism and the DMARC heuristic limits logged in QUESTIONS.md.

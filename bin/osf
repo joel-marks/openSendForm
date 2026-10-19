@@ -876,19 +876,22 @@ function cmdInstallStatus(): int
 }
 
 /**
- * monitor:run — the single cron entry point for synthetic monitoring.
+ * monitor:run — the single cron entry point for zero-noise monitoring.
  *
- * Each run purges expired synthetic submissions, checks the canary form plus
- * any other active form now due (staggered), records every result and sends one
- * alert email on each ok<->fail transition. It ALWAYS exits 0 when checks ran —
- * a failing check is reported and alerted, not treated as a monitor error — and
- * exits nonzero only when the monitor itself cannot operate: here, when an alert
- * email it needed to send could not be sent (cron output is then the backstop).
+ * Each run purges expired synthetic submissions, runs the DARK CANARY (one
+ * full-pipeline probe whose delivery is addressed to the service's own mailbox,
+ * never a human) and observes every active form's real delivery outcome
+ * passively, sending one alert email on each transition (canary ok<->fail, or a
+ * form's first entry into failed/dead and its recovery). A HEALTHY run sends NO
+ * email to anyone. It ALWAYS exits 0 when the canary ran - a failing canary is
+ * reported and alerted, not treated as a monitor error - and exits nonzero only
+ * when an alert email it needed to send could not be sent (cron output is then
+ * the backstop).
  *
- * With --quiet it prints NOTHING to stdout when the run is unremarkable (no
- * failed check, no alert sent, no alert-send failure); the full headed output
- * appears only when something needs a human. cPanel emails any cron stdout, so
- * quiet turns the hourly job into a free failure-alert channel: a mail means
+ * With --quiet it prints NOTHING to stdout when the run is unremarkable (canary
+ * passed, no alert sent, no alert-send failure); the full headed output appears
+ * only when something needs a human. cPanel emails any cron stdout, so quiet
+ * turns the hourly job into a free failure-alert channel: a mail means
  * attention is needed. The nonzero alert-send-failure line always prints to
  * stderr regardless, and exit codes are unchanged either way.
  *
@@ -910,9 +913,9 @@ function cmdMonitorRun(Database $db, Config $config, Paths $paths, array $args):
     $monitor = buildMonitorService($db, $config, $paths);
     $summary = $monitor->run();
 
-    // Worth a human's attention: any check failed, any alert was sent, or an
+    // Worth a human's attention: the canary failed, any alert was sent, or an
     // alert could not be sent. Under --quiet, only these print.
-    $noteworthy = $summary['failures'] > 0
+    $noteworthy = $summary['canary_ok'] === false
         || $summary['alerts_sent'] > 0
         || $summary['alert_error'] !== null;
 
@@ -924,38 +927,29 @@ function cmdMonitorRun(Database $db, Config $config, Paths $paths, array $args):
 
         // Plain-language verdict for a non-technical operator, then the
         // machine-parsable detail lines beneath.
-        if ($summary['checks_ran'] === 0) {
+        if (!$summary['canary_ran']) {
             fwrite(STDOUT, "No forms yet - create your first form in the admin panel and monitoring will begin.\n");
-        } elseif ($summary['failures'] === 0) {
-            fwrite(STDOUT, "All checks passed - your forms are being monitored.\n");
+        } elseif ($summary['canary_ok'] === false) {
+            fwrite(STDOUT, "PROBLEM: the hourly canary check failed - see the details below.\n");
+        } elseif ($summary['alerts_sent'] > 0) {
+            fwrite(STDOUT, "A form's real delivery state changed - see the details below.\n");
         } else {
-            fwrite(STDOUT, sprintf(
-                "PROBLEM: %d of %d checks failed - see the details below.\n",
-                $summary['failures'],
-                $summary['checks_ran']
-            ));
-        }
-
-        if ($summary['deferred'] > 0) {
-            fwrite(STDOUT, sprintf(
-                "Deferred %d form(s) to the next run (time budget reached) - not a failure.\n",
-                $summary['deferred']
-            ));
+            fwrite(STDOUT, "Healthy - the canary delivered and no form delivery problems were seen.\n");
         }
 
         fwrite(STDOUT, sprintf(
-            "monitor:run - checked %d form(s): %d ok, %d failed; purged %d synthetic; %d alert(s) sent.\n",
-            $summary['checks_ran'],
-            $summary['checks_ran'] - $summary['failures'],
-            $summary['failures'],
+            "monitor:run - canary %s; %d passive transition(s); purged %d synthetic; %d alert(s) sent.\n",
+            $summary['canary_ran'] ? ($summary['canary_ok'] ? 'ok' : 'FAILED') : 'not run (no active forms)',
+            $summary['passive_transitions'],
             $summary['purged'],
             $summary['alerts_sent']
         ));
 
         foreach ($summary['results'] as $result) {
             fwrite(STDOUT, sprintf(
-                "  [%s] #%d %s - %s\n",
+                "  [%s] %s #%d %s - %s\n",
                 $result['ok'] ? 'OK' : '--',
+                $result['scope'] === 'canary' ? 'canary' : 'form  ',
                 $result['form_id'],
                 $result['form_name'],
                 $result['detail']
@@ -964,11 +958,8 @@ function cmdMonitorRun(Database $db, Config $config, Paths $paths, array $args):
 
         // One-line runtime summary so future resource questions have data.
         fwrite(STDOUT, sprintf(
-            "runtime: %ds elapsed; %d check(s) run, %d deferred (budget %ds).\n",
-            $summary['elapsed_seconds'],
-            $summary['checks_ran'],
-            $summary['deferred'],
-            $config->monitorTimeBudgetSeconds()
+            "runtime: %ds elapsed.\n",
+            $summary['elapsed_seconds']
         ));
     }
 
@@ -983,43 +974,47 @@ function cmdMonitorRun(Database $db, Config $config, Paths $paths, array $args):
 }
 
 /**
- * monitor:status — per-form last check, result and next due time. Read-only.
+ * monitor:status — the canary's last run/result and each active form's last
+ * real delivery outcome. Read-only; checks are no longer scheduled per form, so
+ * there is no "next due".
  */
 function cmdMonitorStatus(Database $db, Config $config, Paths $paths): int
 {
     $monitor = buildMonitorService($db, $config, $paths);
-    $rows = $monitor->status();
+    $status = $monitor->status();
 
     fwrite(STDOUT, "Monitoring status\n=================\n");
 
-    if ($rows === []) {
+    if ($status['forms'] === []) {
         fwrite(STDOUT, "No active forms to monitor. Create your first form in the admin panel to start monitoring.\n");
         return 0;
     }
 
-    // Plain-language verdict first, then the per-form detail lines.
-    $failing = 0;
-    foreach ($rows as $row) {
-        if ($row['last_ok'] === false) {
-            $failing++;
-        }
-    }
-    if ($failing === 0) {
-        fwrite(STDOUT, "All monitored forms are OK.\n\n");
+    // Canary line first.
+    $canary = $status['canary'];
+    if ($canary === null || $canary['last_ok'] === null) {
+        fwrite(STDOUT, "Canary: not run yet (it runs from the monitor:run cron job).\n\n");
     } else {
-        fwrite(STDOUT, sprintf("PROBLEM: %d monitored form(s) are failing - see below.\n\n", $failing));
+        fwrite(STDOUT, sprintf(
+            "Canary: #%d %s - last run %s UTC (%s)\n\n",
+            $canary['form_id'],
+            $canary['form_name'],
+            $canary['last_run_at'] ?? 'never',
+            $canary['last_ok'] ? 'ok' : 'FAILED'
+        ));
     }
 
-    foreach ($rows as $row) {
-        $result = $row['last_ok'] === null ? 'never checked' : ($row['last_ok'] ? 'ok' : 'FAILED');
+    fwrite(STDOUT, "Per-form last real delivery outcome:\n");
+    foreach ($status['forms'] as $row) {
+        $outcome = $row['outcome'] === null ? 'no real submissions yet' : strtoupper((string) $row['outcome']);
+        $when = $row['at'] === null || $row['at'] === '' ? '' : ' at ' . $row['at'] . ' UTC';
         fwrite(STDOUT, sprintf(
-            "#%d %s%s\n    last check: %s (%s)\n    next due:   %s\n",
+            "  #%d %s%s - %s%s\n",
             $row['form_id'],
             $row['form_name'],
             $row['is_canary'] ? ' [canary]' : '',
-            $row['last_checked_at'] ?? 'never',
-            $result,
-            $row['next_due']
+            $outcome,
+            $when
         ));
     }
 
@@ -1129,22 +1124,24 @@ function usage(): string
         flags removes every submission, --status limits to one status, --form
         removes one form's submissions (unknown ID refused). --status and
         --form cannot be combined.
-      monitor:run is the single cron entry point for synthetic monitoring: it
-        sends real fake-but-marked submissions through the FULL public pipeline
-        (token -> min-time -> POST -> store -> SMTP delivery to the form's real
-        recipient), records each result, alerts on ok<->fail transitions and
-        auto-purges expired synthetic submissions. It always exits 0 when checks
-        ran (failures are alerted, not errors) and nonzero only when it cannot
-        alert. A time budget (MONITOR_TIME_BUDGET_SECONDS) caps the run: the
-        canary always runs, then others defer to the next run once it is spent.
-        --quiet prints nothing unless a check failed, an alert was sent or an
-        alert could not be sent - so under cPanel the only mail you get is one
-        that needs attention. Recommended cPanel cron (hourly):
+      monitor:run is the single cron entry point for zero-noise monitoring. It
+        runs the DARK CANARY - one real submission through the FULL public
+        pipeline (token -> min-time -> POST -> store -> SMTP), but the probe is
+        addressed to the service's own mailbox, never a human, so a healthy
+        check contacts no one. It then observes every form's real delivery
+        outcome passively and alerts once on each transition (canary ok<->fail,
+        or a form's first failed/dead and its recovery). A HEALTHY run sends NO
+        email at all; any monitor email means act now. It always exits 0 when
+        the canary ran (a failed canary is alerted, not an error) and nonzero
+        only when an alert email could not be sent. --quiet prints nothing
+        unless the canary failed, an alert was sent or an alert could not be
+        sent - so under cPanel the only mail you get is one that needs
+        attention. Recommended cPanel cron (hourly):
           0 * * * * /usr/local/bin/php /home/USER/osf-php/bin/osf monitor:run --quiet
         (adjust the PHP path and project path for your host; the same style as
         the mail:retry cron line. Lower-powered hosts can run it less often.)
-      monitor:status prints each active form's last check, result and next due
-        time; read-only.
+      monitor:status prints the canary's last run/result and each active form's
+        last real delivery outcome; read-only.
       install:status reports whether the browser installer has run (config +
         lock files); it never connects to or creates a database.
       migrate applies any pending schema migrations and reports what it did;

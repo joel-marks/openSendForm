@@ -468,3 +468,50 @@ decisions recorded for review:
 5. **World-writable probe scope.** `StatusController` checks the shipped code
    trees (root, src, public, templates, bin) plus `var/` and `var/data/` for the
    other-write (0002) bit. Flag if a different directory set is intended.
+
+---
+
+## Sprint: dark-canary monitoring redesign + DMARC fallback (fix/dark-canary-dmarc-skip, 2026-10-18)
+
+Non-blocking decisions taken where the task prompt left a choice; flag any you
+would have called differently.
+
+1. **Dark-canary mechanism = self-addressed delivery.** Per the ruling's first
+   listed option: a synthetic probe's delivery is addressed to the service's own
+   `MAIL_FROM_ADDRESS` (routed in `DeliveryService` by the `is_synthetic` flag),
+   so a genuine SMTP transaction completes to the local server and the accepted
+   message lands in the service mailbox, reaching no human. The mail layer is
+   not faked. The probe's submitted `email` field is left as the form recipient
+   (it only becomes Reply-To on a self-delivered message, so it harms no one and
+   keeps the probe passing the email-validation stage exactly as before). Flag
+   if a dedicated reserved sink address (rather than the From address) was
+   wanted.
+
+2. **Retired two config keys + deleted MonitorSchedule.** `MONITOR_FORM_INTERVAL_HOURS`
+   and `MONITOR_TIME_BUDGET_SECONDS` (and the stagger/defer logic + `MonitorSchedule`)
+   are gone, since the redesign abolishes per-form scheduling and the single
+   canary needs no time budget. Migration history is intact (monitor_checks
+   stays; migration 012 only ADDs a `kind` column). Flag if the keys should have
+   been kept as inert no-ops for config-file compatibility.
+
+3. **Passive per-form signal = most-recent real delivery outcome by id.** A
+   form's state is derived from its newest non-synthetic submission whose status
+   is sent/failed/dead (ordered by id, so a later successful submission
+   supersedes an older failure and drives recovery; an older row escalating to
+   dead does not re-alert once a newer row has recovered). `received`/
+   never-attempted rows carry no verdict and are ignored.
+
+4. **Dashboard banner now tracks passive per-form delivery, not the canary.** A
+   failing canary is surfaced by email (MONITOR_ALERT_EMAIL) and on the Status
+   tab; the red dashboard banner ("Form delivery is failing") reflects real
+   submissions that failed/dead and have not recovered (monitor_checks kind
+   'form'). Flag if the banner should also raise on a canary failure.
+
+5. **DMARC organizational-domain heuristic (no PSL vendored).** Per the ruling,
+   a conservative two-label rule, extended to three labels under a known
+   second-level suffix (co/com/org/net/gov/edu/ac/... under a 2-letter ccTLD:
+   co.uk, com.au, ...). This is not a full Public Suffix List; an unlisted
+   multi-level public suffix will yield too-short an org domain and the fallback
+   lookup may miss. Limits are documented in a comment on
+   `DeliverabilityChecker::organizationalDomain()`. Flag if a vendored PSL is
+   later wanted for completeness.

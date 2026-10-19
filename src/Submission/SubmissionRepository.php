@@ -146,6 +146,30 @@ final class SubmissionRepository
     }
 
     /**
+     * The most recent REAL (non-synthetic) submission for a form that has
+     * reached a delivery outcome - 'sent', 'failed' or 'dead' - or null when
+     * the form has no such real traffic yet ('received'/never-attempted rows do
+     * not count, as they carry no delivery verdict). Ordered by id DESC so a
+     * newer successful submission supersedes an older failed one: this is the
+     * form's "last real delivery outcome". Drives the passive per-form monitor
+     * and the Status readout. Metadata only; never selects content.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function latestRealDeliveryOutcomeForForm(int $formId): ?array
+    {
+        return $this->db->fetchOne(
+            "SELECT id, form_id, status, created_at, last_attempt_at, last_error
+               FROM submissions
+              WHERE form_id = :form_id AND is_synthetic = 0
+                AND status IN ('sent', 'failed', 'dead')
+              ORDER BY id DESC
+              LIMIT 1",
+            ['form_id' => $formId]
+        );
+    }
+
+    /**
      * Find a submission by id, or null.
      *
      * @return array<string, mixed>|null

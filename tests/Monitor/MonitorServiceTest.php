@@ -24,17 +24,18 @@ use OpenSendForm\Tests\Support\InProcessHttpClient;
 use PHPUnit\Framework\TestCase;
 
 /**
- * End-to-end coverage of the monitor: it drives REAL submissions through an
- * in-process app (token -> min-time -> POST -> store -> delivery), polls the
- * stored row, records each check, alerts on ok<->fail transitions, purges
- * expired synthetics and generates the secret on first run — all with no live
- * server and no wall-clock sleeping.
+ * End-to-end coverage of the zero-noise monitor. The dark canary drives a REAL
+ * submission through an in-process app (token -> min-time -> POST -> store ->
+ * delivery) but its delivery is addressed to the service's own From address, so
+ * no human is ever contacted. Passive per-form observation reads real delivery
+ * outcomes and alerts only on a transition. No live server, no wall-clock sleep.
  */
 final class MonitorServiceTest extends TestCase
 {
     private const MONITOR_SECRET = 'monitor-shared-secret';
     private const BASE_URL = 'http://localhost:8080';
     private const RECIPIENT = 'owner@example.com';
+    private const FROM_ADDRESS = 'noreply@service.example';
     private const ADMIN_EMAIL = 'admin@example.com';
 
     private Database $db;
@@ -78,14 +79,16 @@ final class MonitorServiceTest extends TestCase
         @rmdir($this->configDir);
     }
 
-    public function testPassingCheckDeliversToRecipientAndRecordsOk(): void
+    // --- The dark canary ---------------------------------------------------
+
+    public function testPassingCanaryIsDeliveredDarkToTheServiceAddress(): void
     {
         $delivery = new FakeMailer();
         $alerts = new FakeMailer();
         $summary = $this->monitor($delivery, $alerts)->run();
 
-        self::assertSame(1, $summary['checks_ran']);
-        self::assertSame(0, $summary['failures']);
+        self::assertTrue($summary['canary_ran']);
+        self::assertTrue($summary['canary_ok']);
         self::assertSame(0, $summary['alerts_sent']);
 
         // The synthetic submission reached 'sent' and is flagged synthetic.
@@ -93,17 +96,35 @@ final class MonitorServiceTest extends TestCase
         self::assertNotNull($row);
         self::assertSame('sent', (string) $row['status']);
 
-        // Delivered to the form's REAL recipient, carrying the marker.
+        // The SMTP transaction genuinely happened, but was addressed to the
+        // service's OWN From address - never the form's real recipient.
         self::assertSame(1, $delivery->callCount());
-        self::assertSame(self::RECIPIENT, $delivery->lastCall()['to']);
+        self::assertSame(self::FROM_ADDRESS, $delivery->lastCall()['to']);
+        self::assertNotSame(self::RECIPIENT, $delivery->lastCall()['to']);
         self::assertStringContainsString(MonitorService::MARKER, $delivery->lastCall()['textBody']);
 
-        // Recorded ok; no alert email on a first-ever pass.
-        self::assertTrue($this->checks->lastResultForForm($this->canaryId));
+        // Recorded ok under the canary kind; no alert email on a first-ever pass.
+        self::assertTrue($this->checks->lastResultForForm($this->canaryId, MonitorRepository::KIND_CANARY));
         self::assertSame(0, $alerts->callCount());
     }
 
-    public function testFailingDeliverySendsOneAlertToTheAdmin(): void
+    public function testCanaryNeverDeliversToAnyFormRecipient(): void
+    {
+        // Two active forms with distinct recipients; whichever is the canary,
+        // the delivery must not be addressed to any form's real recipient.
+        $this->forms->createForm('Second', 'two@example.com', ['https://two.example.com']);
+
+        $delivery = new FakeMailer();
+        $this->monitor($delivery, new FakeMailer())->run();
+
+        foreach ($delivery->calls as $call) {
+            self::assertNotSame(self::RECIPIENT, $call['to']);
+            self::assertNotSame('two@example.com', $call['to']);
+            self::assertSame(self::FROM_ADDRESS, $call['to']);
+        }
+    }
+
+    public function testFailingCanaryDeliverySendsOneAlertToTheAdmin(): void
     {
         $delivery = new FakeMailer();
         $delivery->alwaysFail('smtp is down');
@@ -111,7 +132,7 @@ final class MonitorServiceTest extends TestCase
 
         $summary = $this->monitor($delivery, $alerts)->run();
 
-        self::assertSame(1, $summary['failures']);
+        self::assertFalse($summary['canary_ok']);
         self::assertSame(1, $summary['alerts_sent']);
         self::assertNull($summary['alert_error']);
 
@@ -119,10 +140,10 @@ final class MonitorServiceTest extends TestCase
         self::assertSame(self::ADMIN_EMAIL, $alerts->lastCall()['to']);
         self::assertStringContainsString('FAILURE', $alerts->lastCall()['subject']);
 
-        self::assertFalse($this->checks->lastResultForForm($this->canaryId));
+        self::assertFalse($this->checks->lastResultForForm($this->canaryId, MonitorRepository::KIND_CANARY));
     }
 
-    public function testNoRepeatAlertWhileFailingThenRecoveryOnRestore(): void
+    public function testNoRepeatCanaryAlertWhileFailingThenRecoveryOnRestore(): void
     {
         // Fail the first two delivery attempts, succeed after.
         $delivery = new FakeMailer();
@@ -140,7 +161,7 @@ final class MonitorServiceTest extends TestCase
         $monitor->run(); // recovered -> recovery email
         self::assertSame(2, $alerts->callCount());
         self::assertStringContainsString('RECOVERED', $alerts->calls[1]['subject']);
-        self::assertTrue($this->checks->lastResultForForm($this->canaryId));
+        self::assertTrue($this->checks->lastResultForForm($this->canaryId, MonitorRepository::KIND_CANARY));
     }
 
     public function testAlertSendFailureIsReportedForCronBackstop(): void
@@ -152,15 +173,15 @@ final class MonitorServiceTest extends TestCase
 
         $summary = $this->monitor($delivery, $alerts)->run();
 
-        // The check failed AND the alert could not be sent -> reported so the
+        // The canary failed AND the alert could not be sent -> reported so the
         // CLI exits nonzero and cron output becomes the backstop.
-        self::assertSame(1, $summary['failures']);
+        self::assertFalse($summary['canary_ok']);
         self::assertSame(0, $summary['alerts_sent']);
         self::assertNotNull($summary['alert_error']);
         self::assertStringContainsString('alert smtp refused', (string) $summary['alert_error']);
     }
 
-    public function testUnreachableEndpointIsAFailedCheckThatAlerts(): void
+    public function testUnreachableEndpointIsAFailedCanaryThatAlerts(): void
     {
         $delivery = new FakeMailer();
         $alerts = new FakeMailer();
@@ -168,11 +189,73 @@ final class MonitorServiceTest extends TestCase
 
         $summary = $monitor->run();
 
-        self::assertSame(1, $summary['checks_ran']);
-        self::assertSame(1, $summary['failures']);
+        self::assertTrue($summary['canary_ran']);
+        self::assertFalse($summary['canary_ok']);
         self::assertSame(1, $summary['alerts_sent']);
-        self::assertStringContainsString('token fetch failed', $summary['results'][0]['detail']);
+        self::assertStringContainsString('token fetch failed', (string) $summary['canary_detail']);
     }
+
+    // --- Passive per-form observation -------------------------------------
+
+    public function testRealFailedDeliveryAlertsOnceThenDeadThenRecovers(): void
+    {
+        $alerts = new FakeMailer();
+        $monitor = $this->monitor(new FakeMailer(), $alerts);
+
+        // A real (non-synthetic) submission for the canary form that FAILED to
+        // deliver and is retrying. The canary itself passes (own mailer ok).
+        $failedId = $this->realSubmission('failed');
+
+        $monitor->run();
+        // One passive alert for the first entry into 'failed'. (The canary pass
+        // is silent.)
+        self::assertSame(1, $alerts->callCount());
+        self::assertStringContainsString('FAILURE', $alerts->calls[0]['subject']);
+        self::assertSame(self::ADMIN_EMAIL, $alerts->calls[0]['to']);
+
+        // Still failing on the next run -> NO repeat alert.
+        $monitor->run();
+        self::assertSame(1, $alerts->callCount());
+
+        // The same submission escalates to 'dead' -> one alert about that.
+        $this->db->execute('UPDATE submissions SET status = :s WHERE id = :id', ['s' => 'dead', 'id' => $failedId]);
+        $monitor->run();
+        self::assertSame(2, $alerts->callCount());
+        self::assertStringContainsString('UNDELIVERABLE', $alerts->calls[1]['subject']);
+
+        // A later real submission delivers successfully -> recovery notice.
+        $this->realSubmission('sent');
+        $monitor->run();
+        self::assertSame(3, $alerts->callCount());
+        self::assertStringContainsString('RECOVERED', $alerts->calls[2]['subject']);
+    }
+
+    public function testPassiveObservationIgnoresSyntheticRows(): void
+    {
+        // A failed SYNTHETIC row must not trigger any passive per-form alert -
+        // only real traffic drives passive observation.
+        $this->submissions->recordSubmission(
+            $this->canaryId, '127.0.0.1', null, null, '{}', 'failed', true
+        );
+
+        $alerts = new FakeMailer();
+        $summary = $this->monitor(new FakeMailer(), $alerts)->run();
+
+        self::assertSame(0, $summary['passive_transitions']);
+        self::assertSame(0, $alerts->callCount());
+    }
+
+    public function testFailingFormsReflectsPassiveStateForTheDashboardBanner(): void
+    {
+        $this->realSubmission('failed');
+        $this->monitor(new FakeMailer(), new FakeMailer())->run();
+
+        $failing = $this->checks->failingForms();
+        self::assertCount(1, $failing);
+        self::assertSame($this->canaryId, $failing[0]['form_id']);
+    }
+
+    // --- Purge / secret / status ------------------------------------------
 
     public function testExpiredSyntheticsArePurged(): void
     {
@@ -188,8 +271,6 @@ final class MonitorServiceTest extends TestCase
         $summary = $this->monitor(new FakeMailer(), new FakeMailer())->run();
 
         self::assertGreaterThanOrEqual(1, $summary['purged']);
-        // The old probe is gone. (Asserted by its distinctive timestamp rather
-        // than its id, which SQLite may reuse for the run's own fresh probe.)
         $stale = $this->db->fetchAll(
             "SELECT id FROM submissions WHERE created_at = '2000-01-01 00:00:00'"
         );
@@ -198,14 +279,14 @@ final class MonitorServiceTest extends TestCase
 
     public function testSecretIsGeneratedAndWrittenBackOnFirstRun(): void
     {
-        // No secret configured yet, and no active forms so no check needs it.
+        // No secret configured yet, and no active forms so no canary needs it.
         $this->forms->setActive($this->canaryId, false);
         $configPath = $this->configDir . '/config.php';
 
         $summary = $this->monitor(new FakeMailer(), new FakeMailer(), secret: '', configPath: $configPath)->run();
 
         self::assertTrue($summary['secret_generated']);
-        self::assertSame(0, $summary['checks_ran']);
+        self::assertFalse($summary['canary_ran']);
 
         self::assertFileExists($configPath);
         $written = require $configPath;
@@ -213,20 +294,34 @@ final class MonitorServiceTest extends TestCase
         self::assertNotSame('', (string) $written['MONITOR_SECRET']);
     }
 
-    public function testStatusReportsCanaryAndLastResult(): void
+    public function testStatusReportsCanaryAndPerFormOutcome(): void
     {
         $this->monitor(new FakeMailer(), new FakeMailer())->run();
 
         $status = $this->monitor(new FakeMailer(), new FakeMailer())->status();
 
-        self::assertCount(1, $status);
-        self::assertSame($this->canaryId, $status[0]['form_id']);
-        self::assertTrue($status[0]['is_canary']);
-        self::assertTrue($status[0]['last_ok']);
-        self::assertSame('every run', $status[0]['next_due']);
+        // Canary block reflects the hourly heartbeat.
+        self::assertNotNull($status['canary']);
+        self::assertSame($this->canaryId, $status['canary']['form_id']);
+        self::assertTrue($status['canary']['last_ok']);
+
+        // Per-form outcome: the canary's own real traffic is none yet (synthetic
+        // excluded), so the outcome is null.
+        self::assertCount(1, $status['forms']);
+        self::assertSame($this->canaryId, $status['forms'][0]['form_id']);
+        self::assertTrue($status['forms'][0]['is_canary']);
+        self::assertNull($status['forms'][0]['outcome']);
     }
 
-    // --- Run cost (poll, min-time, budget, runtime) -----------------------
+    public function testStatusShowsRealDeliveryOutcomeWhenKnown(): void
+    {
+        $this->realSubmission('sent');
+        $status = $this->monitor(new FakeMailer(), new FakeMailer())->status();
+
+        self::assertSame('sent', $status['forms'][0]['outcome']);
+    }
+
+    // --- Run cost (poll, min-time) ----------------------------------------
 
     public function testImmediateSentShortCircuitsTheDeliveryPoll(): void
     {
@@ -234,29 +329,26 @@ final class MonitorServiceTest extends TestCase
         // only sleep is the min-submit-time wait, with NO delivery-poll re-checks.
         $summary = $this->monitor(new FakeMailer(), new FakeMailer())->run();
 
-        self::assertSame(0, $summary['failures']);
+        self::assertTrue($summary['canary_ok']);
         self::assertSame([4], $this->sleeper->sleeps); // MIN_SUBMIT_SECONDS 3 + margin 1
     }
 
     public function testMinTimeWaitDerivesFromConfiguredMinSubmitSeconds(): void
     {
-        // Raising MIN_SUBMIT_SECONDS lengthens the probe's pre-POST wait by the
-        // same amount (plus the fixed small margin) — the sleep is derived from
-        // config, never a fixed worst case.
         $summary = $this->monitor(
             new FakeMailer(),
             new FakeMailer(),
             overrides: ['MIN_SUBMIT_SECONDS' => '7']
         )->run();
 
-        self::assertSame(0, $summary['failures']);
+        self::assertTrue($summary['canary_ok']);
         self::assertSame([8], $this->sleeper->sleeps); // 7 + margin 1, no poll
     }
 
     public function testRowStillReceivedAtTimeoutIsAFailure(): void
     {
         // Mail off -> DeliveryStage skips -> the synthetic row stays 'received',
-        // so the poll runs the full send-timeout window and the check honestly
+        // so the poll runs the full send-timeout window and the canary honestly
         // fails (delivery did not happen in-request).
         $summary = $this->monitor(
             new FakeMailer(),
@@ -264,46 +356,29 @@ final class MonitorServiceTest extends TestCase
             overrides: ['MAIL_ENABLED' => '0', 'MONITOR_SEND_TIMEOUT_SECONDS' => '10']
         )->run();
 
-        self::assertSame(1, $summary['failures']);
-        self::assertStringContainsString("did not reach 'sent'", $summary['results'][0]['detail']);
-        // 4s min-time wait, then five 2s re-checks (interval = timeout/5) spanning
-        // the 10s timeout window — a few short re-checks, not thirty 1s polls.
+        self::assertFalse($summary['canary_ok']);
+        self::assertStringContainsString("did not reach 'sent'", (string) $summary['canary_detail']);
         self::assertSame([4, 2, 2, 2, 2, 2], $this->sleeper->sleeps);
     }
 
-    public function testTimeBudgetDefersFormsAfterTheCanary(): void
-    {
-        // A second active form, never checked, so the schedule plans [canary, #2].
-        $this->forms->createForm('Second', 'two@example.com', ['https://two.example.com']);
-
-        // Budget smaller than the canary's own cost: the canary always runs, then
-        // the second form defers to the next run (deferral is not a failure).
-        $summary = $this->monitor(
-            new FakeMailer(),
-            new FakeMailer(),
-            overrides: ['MONITOR_TIME_BUDGET_SECONDS' => '2']
-        )->run();
-
-        self::assertSame(1, $summary['checks_ran']);
-        self::assertSame(1, $summary['deferred']);
-        self::assertSame(0, $summary['failures']);
-        self::assertSame($this->canaryId, $summary['results'][0]['form_id']);
-        // Elapsed is reported for the runtime summary line.
-        self::assertSame(4, $summary['elapsed_seconds']);
-    }
-
-    public function testGenerousBudgetChecksEveryDueFormWithNoDeferral(): void
-    {
-        $this->forms->createForm('Second', 'two@example.com', ['https://two.example.com']);
-
-        // Default budget (45s) is ample for two instant synthetic checks.
-        $summary = $this->monitor(new FakeMailer(), new FakeMailer())->run();
-
-        self::assertSame(2, $summary['checks_ran']);
-        self::assertSame(0, $summary['deferred']);
-    }
-
     // --- Harness ----------------------------------------------------------
+
+    /**
+     * Insert a real (non-synthetic) submission for the canary form in a given
+     * delivery status, returning its id.
+     */
+    private function realSubmission(string $status): int
+    {
+        return $this->submissions->recordSubmission(
+            $this->canaryId,
+            '203.0.113.9',
+            'https://example.com',
+            'ua',
+            '{"email":"a@b.test"}',
+            $status,
+            false
+        );
+    }
 
     /**
      * @param array<string, string> $overrides Extra/override config values.
@@ -321,6 +396,8 @@ final class MonitorServiceTest extends TestCase
             'APP_SECRET'         => 'app-signing-secret',
             'MONITOR_SECRET'     => $secret,
             'MONITOR_BASE_URL'   => self::BASE_URL,
+            // The dark-canary send address (the service's own From).
+            'MAIL_FROM_ADDRESS'  => self::FROM_ADDRESS,
             // Keep rate limits out of the way of repeated synthetic POSTs.
             'RATE_IP_PER_MINUTE' => '1000',
             'RATE_FORM_PER_HOUR' => '1000',

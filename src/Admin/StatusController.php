@@ -62,6 +62,8 @@ final class StatusController
             $checker,
             $admin,
             self::appDirs($paths),
+            new \OpenSendForm\Form\FormRepository($db),
+            new \OpenSendForm\Submission\SubmissionRepository($db),
             self::selectorFrom($request->getQueryParams())
         );
 

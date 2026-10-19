@@ -139,6 +139,83 @@ final class DeliverabilityCheckerTest extends TestCase
         self::assertSame('v=DMARC1; p=none; rua=mailto:postmaster@acme.co', $dmarc['recommended']);
     }
 
+    public function testDmarcFallsBackToOrganizationalDomainWhenSubdomainHasNone(): void
+    {
+        // No record on the exact subdomain, but the organizational domain has
+        // one - exactly the Outlook-vs-our-checker case (app.opensendform.com).
+        $this->dns->setTxt('_dmarc.opensendform.com', ['v=DMARC1; p=none; rua=mailto:dmarc@opensendform.com']);
+
+        $dmarc = $this->checker()->check('noreply@app.opensendform.com')['dmarc'];
+
+        self::assertTrue($dmarc['ok']);
+        self::assertSame('present', $dmarc['state']);
+        // The readout labels the name the record was actually found on.
+        self::assertSame('_dmarc.opensendform.com', $dmarc['fqdn']);
+        self::assertStringContainsString('organizational domain', (string) $dmarc['note']);
+        self::assertStringContainsString('_dmarc.app.opensendform.com', (string) $dmarc['note']);
+    }
+
+    public function testDmarcFallsBackUnderTwoPartSuffix(): void
+    {
+        // A ccTLD with a known second level (co.uk): the org domain is three
+        // labels, not two.
+        $this->dns->setTxt('_dmarc.example.co.uk', ['v=DMARC1; p=quarantine']);
+
+        $dmarc = $this->checker()->check('hello@mail.example.co.uk')['dmarc'];
+
+        self::assertTrue($dmarc['ok']);
+        self::assertSame('_dmarc.example.co.uk', $dmarc['fqdn']);
+    }
+
+    public function testDmarcAbsentOnBothSubdomainAndOrgIsNotFound(): void
+    {
+        // Neither the subdomain nor its organizational domain publishes DMARC.
+        $dmarc = $this->checker()->check('noreply@app.opensendform.com')['dmarc'];
+
+        self::assertFalse($dmarc['ok']);
+        self::assertSame('absent', $dmarc['state']);
+        // With nothing found, the readout points back at the From (sub)domain.
+        self::assertSame('_dmarc.app.opensendform.com', $dmarc['fqdn']);
+        self::assertSame('', (string) $dmarc['note']);
+    }
+
+    public function testDmarcOnExactSubdomainDoesNotNoteFallback(): void
+    {
+        // A record on the exact name is found directly: no fallback, no note.
+        $this->dns->setTxt('_dmarc.app.opensendform.com', ['v=DMARC1; p=none']);
+
+        $dmarc = $this->checker()->check('noreply@app.opensendform.com')['dmarc'];
+
+        self::assertTrue($dmarc['ok']);
+        self::assertSame('_dmarc.app.opensendform.com', $dmarc['fqdn']);
+        self::assertSame('', (string) $dmarc['note']);
+    }
+
+    /**
+     * @dataProvider organizationalDomains
+     */
+    public function testOrganizationalDomainHeuristic(string $domain, string $expected): void
+    {
+        self::assertSame($expected, DeliverabilityChecker::organizationalDomain($domain));
+    }
+
+    /**
+     * @return array<string, array{0:string, 1:string}>
+     */
+    public static function organizationalDomains(): array
+    {
+        return [
+            'already org'        => ['opensendform.com', 'opensendform.com'],
+            'one subdomain'      => ['app.opensendform.com', 'opensendform.com'],
+            'deep subdomain'     => ['a.b.c.opensendform.com', 'opensendform.com'],
+            'co.uk subdomain'    => ['mail.example.co.uk', 'example.co.uk'],
+            'bare co.uk'         => ['example.co.uk', 'example.co.uk'],
+            'com.au subdomain'   => ['mail.acme.com.au', 'acme.com.au'],
+            'single label'       => ['localhost', 'localhost'],
+            'empty'              => ['', ''],
+        ];
+    }
+
     // --- Placeholder / invalid domains ------------------------------------
 
     public function testPlaceholderDomainFlagsPlaceholderAndOffersNoLookup(): void

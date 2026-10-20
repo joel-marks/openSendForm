@@ -1,9 +1,9 @@
 # openSendForm — current state
 
-Last updated: 2026-10-18 (fix/dark-canary-dmarc-skip, Claude Code)
+Last updated: 2026-10-20 (fix/version-bump-0-2-1, Claude Code)
 
 ## Status
-The service is end-to-end and release-ready as **v0.2.0**. A versioned v1 API
+The service is end-to-end and release-ready as **v0.2.1**. A versioned v1 API
 drives an ordered validation/abuse pipeline; passing submissions are stored and
 relayed by authenticated SMTP (in-request send + operator retry sweep). Full
 admin panel (auth, 2FA, forms/submissions CRUD, Email + Deliverability + Status
@@ -109,7 +109,7 @@ forbids hardcoded colour outside it (named colours too - even in comments).
 Nav tabs: Dashboard, Forms, Submissions, Email, Deliverability, Admins, Status.
 
 ## Packaging
-`bin/build-release.php` / `verify-release.php`; `src/Version.php` (0.2.0). Zip's
+`bin/build-release.php` / `verify-release.php`; `src/Version.php` (0.2.1). Zip's
 single top-level folder is `osf-php/`; artefact `osf-php-vX.Y.Z.zip`. Modes
 stamped (dirs 755, files 644, bin/osf 755) and verified. INSTALL.txt generated.
 

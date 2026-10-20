@@ -24,8 +24,8 @@ final class VersionTest extends TestCase
 
     public function testCurrentPackagedVersion(): void
     {
-        // 0.2.0 is the openSendForm (osf-php) rebrand release. This guards
-        // against an accidental revert of the version bump.
-        self::assertSame('0.2.0', Version::STRING);
+        // 0.2.1 is the dark-canary monitoring release. This guards against
+        // an accidental revert of the version bump.
+        self::assertSame('0.2.1', Version::STRING);
     }
 }

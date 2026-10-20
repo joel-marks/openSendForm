@@ -2486,3 +2486,18 @@ and operator-approved.
 - **Deviations / notes:** retired two `MONITOR_*` config keys and deleted
   `MonitorSchedule` (in scope: the redesign abolishes scheduling). Dark-canary
   mechanism and the DMARC heuristic limits logged in QUESTIONS.md.
+
+## 2026-10-20 — Version bump to 0.2.1 (housekeeping)
+- Branch: fix/version-bump-0-2-1 (off main).
+- The dark-canary release shipped with git tag `v0.2.1` but `src/Version.php`
+  was left at `0.2.0`. `Version::STRING` set to `'0.2.1'`; `VersionTest`'s
+  exact-version assertion updated to match.
+- Verified the release pipeline reads the bumped constant: rebuilt and
+  verified the zip (`bin/build-release.php` + `bin/verify-release.php`) -
+  produces and passes `osf-php-v0.2.1.zip`. Note: `build-release.php` exports
+  via `git archive HEAD`, so the version commit had to land before the build
+  picked it up; the first build/verify attempt against the uncommitted edit
+  correctly failed with a version mismatch, confirming the check works.
+- **Test results:** full PHPUnit suite green - 689 tests, 4286 assertions.
+- **Deviations / notes:** none; one-item scope, no composer dependencies
+  touched.

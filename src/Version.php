@@ -9,5 +9,5 @@ namespace OpenSendForm;
  */
 final class Version
 {
-    public const STRING = '0.2.0';
+    public const STRING = '0.2.1';
 }
